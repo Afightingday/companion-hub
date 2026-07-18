@@ -98,11 +98,62 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
-          xcrun simctl io "$UDID" recordVideo --codec=h264 artifacts/motion-lab.mp4 &
-          RECORDER_PID=$!
-          sleep 10
-          kill -INT "$RECORDER_PID"
-          wait "$RECORDER_PID" || true
+          python3 - <<'PY'
+          import os
+          import queue
+          import signal
+          import subprocess
+          import threading
+          import time
+
+          command = [
+              "xcrun", "simctl", "io", os.environ["UDID"],
+              "recordVideo", "--codec=h264", "artifacts/motion-lab.mp4",
+          ]
+          recorder = subprocess.Popen(
+              command,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT,
+              text=True,
+              bufsize=1,
+          )
+          messages = queue.Queue()
+
+          def forward_output():
+              for line in recorder.stdout:
+                  print(line, end="", flush=True)
+                  messages.put(line)
+              messages.put(None)
+
+          threading.Thread(target=forward_output, daemon=True).start()
+          ready_deadline = time.monotonic() + 120
+          while True:
+              remaining = ready_deadline - time.monotonic()
+              if remaining <= 0:
+                  raise RuntimeError("Timed out waiting for Recording started")
+              try:
+                  message = messages.get(timeout=remaining)
+              except queue.Empty as error:
+                  raise RuntimeError("Timed out waiting for Recording started") from error
+              if message is None:
+                  raise RuntimeError(
+                      f"Recorder exited before readiness with code {recorder.poll()}"
+                  )
+              if "Recording started" in message:
+                  break
+
+          time.sleep(10)
+          recorder.send_signal(signal.SIGINT)
+          try:
+              recorder.wait(timeout=30)
+          except subprocess.TimeoutExpired:
+              recorder.terminate()
+              try:
+                  recorder.wait(timeout=10)
+              except subprocess.TimeoutExpired:
+                  recorder.kill()
+                  recorder.wait(timeout=10)
+          PY
           xcrun simctl io "$UDID" screenshot artifacts/motion-lab.png
           test -s artifacts/motion-lab.mp4
           test -s artifacts/motion-lab.png
