@@ -13,11 +13,11 @@ struct MotionSpec: Identifiable {
     let draw: (_ context: inout GraphicsContext, _ size: CGFloat, _ phase: Double, _ dark: Bool) -> Void
 }
 
-// MARK: - Thinking|起草
+// MARK: - Thinking|起草(可见笔)
 
-/// 看不见的笔在写草稿:连笔字形的起伏(不可读的行书),词间提笔,
-/// 写完悬置一拍,墨入水般下沉消散,新句已经开笔——永远未完成的草稿。
-/// 双句各占半周期交叠,无缝连续。常量与草样 1:1。
+/// 一支线艺勾勒的笔正在写不可读的行书:笔随书写微颤,词间小提笔,
+/// 写完悬笔一拍(在想),再大提笔换行;写过的句子墨入水般下沉消散。
+/// 笔尖位置全程连续,双句各占半周期,无缝。常量与草样 1:1。
 enum DraftingMotion {
     static let cycle = 3.6
 
@@ -26,22 +26,22 @@ enum DraftingMotion {
         let spans: [(Double, Double)]
     }
 
-    static let wordGap = 0.05
+    static let wordGap = 0.14      // 词间提笔占书写段比例(提笔要看得见)
 
     /// 每句 = 若干笔画(词);隆起间距须 ≳ 2× 线宽,否则墨挤成团
     static let phrases: [Phrase] = {
         let strokeSets: [[[CGPoint]]] = [
             [
-                [CGPoint(x: 0.10, y: 0.420), CGPoint(x: 0.155, y: 0.315), CGPoint(x: 0.21, y: 0.435),
-                 CGPoint(x: 0.265, y: 0.320), CGPoint(x: 0.32, y: 0.440)],
-                [CGPoint(x: 0.40, y: 0.435), CGPoint(x: 0.435, y: 0.240), CGPoint(x: 0.475, y: 0.440),
-                 CGPoint(x: 0.545, y: 0.325), CGPoint(x: 0.615, y: 0.450), CGPoint(x: 0.70, y: 0.360)],
+                [CGPoint(x: 0.10, y: 0.475), CGPoint(x: 0.155, y: 0.370), CGPoint(x: 0.21, y: 0.490),
+                 CGPoint(x: 0.265, y: 0.375), CGPoint(x: 0.32, y: 0.495)],
+                [CGPoint(x: 0.40, y: 0.490), CGPoint(x: 0.435, y: 0.295), CGPoint(x: 0.475, y: 0.495),
+                 CGPoint(x: 0.545, y: 0.380), CGPoint(x: 0.615, y: 0.505), CGPoint(x: 0.70, y: 0.415)],
             ],
             [
-                [CGPoint(x: 0.14, y: 0.655), CGPoint(x: 0.19, y: 0.540), CGPoint(x: 0.245, y: 0.660),
-                 CGPoint(x: 0.30, y: 0.550), CGPoint(x: 0.355, y: 0.665)],
-                [CGPoint(x: 0.43, y: 0.660), CGPoint(x: 0.50, y: 0.535), CGPoint(x: 0.565, y: 0.670),
-                 CGPoint(x: 0.65, y: 0.560)],
+                [CGPoint(x: 0.14, y: 0.700), CGPoint(x: 0.19, y: 0.585), CGPoint(x: 0.245, y: 0.705),
+                 CGPoint(x: 0.30, y: 0.595), CGPoint(x: 0.355, y: 0.710)],
+                [CGPoint(x: 0.43, y: 0.705), CGPoint(x: 0.50, y: 0.580), CGPoint(x: 0.565, y: 0.715),
+                 CGPoint(x: 0.65, y: 0.605)],
             ],
         ]
         return strokeSets.map { strokes in
@@ -60,12 +60,117 @@ enum DraftingMotion {
         }
     }()
 
-    static let writeEnd = 0.34     // 句内相位:书写结束(写得轻快)
-    static let holdEnd = 0.50      // 写完悬置一拍再化(读得完)
-    static let fadeEnd = 0.66      // 消散完毕(避免两句同显吵)
-    static let sinkDrift: CGFloat = 0.022   // 消散时墨微微下沉
-    static let agingTaper = 0.04   // 句首湿墨线索,若有似无
-    static let widthScale: CGFloat = 0.62   // 笔要细,字形才透气
+    static let writeEnd = 0.38     // 句内相位:书写结束(半窗 0.5 内含悬笔+换行)
+    static let holdEnd = 0.50      // 悬置结束、开始消散
+    static let fadeEnd = 0.66      // 消散完毕
+    static let sinkDrift: CGFloat = 0.022
+    static let agingTaper = 0.04
+    static let widthScale: CGFloat = 0.62   // 字迹比笔细,层次
+
+    // 笔(线艺,局部坐标笔尖在原点、笔杆朝上,再整体旋转)
+    static let penAngle = 0.55     // rad,右倾书写姿态
+    static let penWobble = 0.05    // rad,书写微颤幅度
+    static let penWobbleFreq = 9.0 // 每周期颤动次数
+    static let penWidthScale: CGFloat = 0.50   // 笔是线艺勾勒,不是实心棒
+    static let penLen: CGFloat = 0.24
+    static let penNibLen: CGFloat = 0.055
+    static let penNibHalf: CGFloat = 0.017
+    static let hoverEnd = 0.44     // [writeEnd,hoverEnd] 悬笔思考;[hoverEnd,0.5] 换行
+    static let gapLift = 0.05      // 词间提笔高度
+    static let hopLift = 0.10      // 换行提笔高度
+    static let hoverBob = 0.007    // 悬笔呼吸幅度
+
+    struct TipState {
+        let pos: CGPoint
+        let tilt: Double
+        let writing: Bool
+    }
+
+    /// 书写进度 wp∈[0,1] → 笔尖位置(词内沿笔画;词隙走提笔小弧)
+    static func tipAt(_ phrase: Phrase, _ wp: Double) -> (pos: CGPoint, lift: Double) {
+        for i in 0..<phrase.paths.count {
+            let (t0, t1) = phrase.spans[i]
+            if wp <= t1 {
+                if wp >= t0 {
+                    return (phrase.paths[i].point(at: (wp - t0) / (t1 - t0)), 0)
+                }
+                let prevEnd = phrase.paths[i - 1].point(at: 1)
+                let curStart = phrase.paths[i].point(at: 0)
+                let g0 = phrase.spans[i - 1].1
+                let q = (wp - g0) / (t0 - g0)
+                let s = MotionEase.smoothstep(q)
+                let pos = CGPoint(
+                    x: prevEnd.x + (curStart.x - prevEnd.x) * CGFloat(s),
+                    y: prevEnd.y + (curStart.y - prevEnd.y) * CGFloat(s)
+                )
+                return (pos, gapLift * sin(.pi * q))
+            }
+        }
+        return (phrase.paths[phrase.paths.count - 1].point(at: 1), 0)
+    }
+
+    /// 全局相位 → 笔尖状态。笔全程连续:写 → 悬笔 → 换行 → 写……
+    static func penState(_ phase: Double) -> TipState {
+        let k = phase < 0.5 ? 0 : 1
+        let pl = phase - 0.5 * Double(k)
+        let cur = phrases[k], nxt = phrases[(k + 1) % 2]
+        if pl < writeEnd {
+            let t = tipAt(cur, pl / writeEnd)
+            return TipState(
+                pos: CGPoint(x: t.pos.x, y: t.pos.y - CGFloat(t.lift)),
+                tilt: 0,
+                writing: t.lift == 0
+            )
+        }
+        let endPos = cur.paths[cur.paths.count - 1].point(at: 1)
+        if pl < hoverEnd {
+            let q = (pl - writeEnd) / (hoverEnd - writeEnd)
+            return TipState(
+                pos: CGPoint(x: endPos.x, y: endPos.y - CGFloat(hoverBob * sin(2 * .pi * q))),
+                tilt: 0,
+                writing: false
+            )
+        }
+        let startPos = nxt.paths[0].point(at: 0)
+        let q = (pl - hoverEnd) / (0.5 - hoverEnd)
+        let s = MotionEase.smoothstep(q)
+        return TipState(
+            pos: CGPoint(
+                x: endPos.x + (startPos.x - endPos.x) * CGFloat(s),
+                y: endPos.y + (startPos.y - endPos.y) * CGFloat(s) - CGFloat(hopLift * sin(.pi * q))
+            ),
+            tilt: 0.16 * sin(.pi * q),
+            writing: false
+        )
+    }
+
+    static func drawPen(_ context: inout GraphicsContext, size: CGFloat, phase: Double, dark: Bool) {
+        let st = penState(phase)
+        let w = MotionLineWidth.width(for: size) * penWidthScale
+        let color = MotionPalette.stroke(dark: dark)
+        let wobble = st.writing ? penWobble * sin(2 * .pi * penWobbleFreq * phase) : 0
+        let angle = penAngle + wobble + st.tilt
+
+        var pctx = context
+        pctx.translateBy(x: st.pos.x * size, y: st.pos.y * size)
+        pctx.rotate(by: .radians(angle))
+
+        let len = penLen * size
+        let nib = penNibLen * size
+        let nh = penNibHalf * size
+        var pen = Path()
+        pen.move(to: .zero)
+        pen.addLine(to: CGPoint(x: -nh, y: -nib))
+        pen.move(to: .zero)
+        pen.addLine(to: CGPoint(x: nh, y: -nib))
+        pen.move(to: CGPoint(x: 0, y: -nib))
+        pen.addLine(to: CGPoint(x: 0, y: -len))
+        pctx.stroke(
+            pen,
+            with: .color(color),
+            style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round)
+        )
+    }
 
     /// 句内相位 pLocal ∈ [0,1):书写 [0,writeEnd] → 悬置 → 消散 [holdEnd,fadeEnd]
     static func drawPhrase(_ context: inout GraphicsContext, size: CGFloat, pLocal: Double, phrase: Phrase, dark: Bool) {
@@ -92,181 +197,197 @@ enum DraftingMotion {
             } else {
                 prog = (writeP - t0) / (t1 - t0)
             }
-            let writing = prog < 1
             path.drawWindow(
                 in: &context, size: size, tail: 0, head: prog,
                 style: .init(
                     color: color, width: w, taper: agingTaper, wrap: false,
                     masterAlpha: masterAlpha, drift: drift,
-                    headDot: writing || pLocal < holdEnd
+                    headDot: prog < 1 || pLocal < holdEnd
                 )
             )
         }
     }
 
     static let spec = MotionSpec(
-        id: "thinking-drafting",
+        id: "thinking-drafting-pen",
         title: "Thinking|起草",
-        subtitle: "3.6s · 双句交叠 · 无缝 · 纯墨",
+        subtitle: "3.6s · 可见笔 · 写-悬-换行 · 纯墨",
         cycle: cycle
     ) { context, size, phase, dark in
         let m = DraftingMotion.self
-        // 两句各偏移半周期,任一时刻总有一句在动
         for k in 0..<2 {
             let shifted = phase - Double(k) * 0.5
             let pLocal = (shifted.truncatingRemainder(dividingBy: 1) + 1).truncatingRemainder(dividingBy: 1)
             m.drawPhrase(&context, size: size, pLocal: pLocal, phrase: m.phrases[k], dark: dark)
         }
+        m.drawPen(&context, size: size, phase: phase, dark: dark)
     }
 }
 
-// MARK: - 搜索|拾音
+// MARK: - 搜索|拾音(斜雨涟漪)
 
-/// 几粒淡墨微点如雨错峰散落(候选的「声音」),极细墨线巡访而过,
-/// 经过一粒它便微微一亮;在目标前减速停驻——雨蓝辉光 + 一圈发丝涟漪,
-/// 线被吸入,其余微点淡去。活动 1.7s + 呼吸停顿 0.4s。常量与草样 1:1。
-enum PickupMotion {
+/// 并行的雨丝被风吹斜,落在一条看不见的水面上;
+/// 众丝落下各起一圈墨色微澜,唯命中那根减速落定,
+/// 荡开雨蓝双圈椭圆涟漪(椭圆即水面透视)。活动 1.7s + 停顿 0.4s。
+enum RainfallMotion {
     static let active = 1.7
     static let rest = 0.4
     static var cycle: Double { active + rest }
 
-    /// 巡访路线:入场 → 经过 3 粒 → 钩入目标
-    static let routePts: [CGPoint] = [
-        CGPoint(x: -0.06, y: 0.36), CGPoint(x: 0.25, y: 0.30), CGPoint(x: 0.55, y: 0.26),
-        CGPoint(x: 0.78, y: 0.46), CGPoint(x: 0.52, y: 0.62),
-    ]
-    static let route = SampledPath.openCatmullRom(routePts, perSegment: 64)
-    static let specks: [CGPoint] = [
-        CGPoint(x: 0.25, y: 0.30), CGPoint(x: 0.55, y: 0.26), CGPoint(x: 0.78, y: 0.46),
-    ]
-    static let extraSpeck = CGPoint(x: 0.80, y: 0.72)   // 未被巡访的一粒(「大量」感)
-    static let target = CGPoint(x: 0.52, y: 0.62)
-    /// 微点在路线上的最近弧长分数(草样 nearestFraction 实测;routePts 变则需重测)
-    static let speckFractions: [Double] = [0.253, 0.497, 0.751]
+    struct Lane {
+        let x0: CGFloat
+        let yLand: CGFloat
+        let born: Double
+        let dur: Double
+        let len: Double
+        let alpha: Double
+        let hit: Bool
+    }
 
-    static let cometLen = 0.22
-    static let widthScale: CGFloat = 0.78
-    static let speckR: CGFloat = 0.62      // × 线宽(微点是耳语,不是波点)
-    static let targetR: CGFloat = 0.72
-    static let speckAlpha = 0.22
-    static let flickAlpha = 0.50           // 被经过瞬间
-    static let flickHalf = 0.045           // 亮度脉冲半宽(按头部弧长分数)
-    static let spawnSpan = (t0: 0.02, t1: 0.18)   // 微点错峰浮现
-    static let targetBorn = 0.14
-    static let travelSpan = (t0: 0.10, t1: 0.68)  // 头部行进(带减速落点)
-    static let travelEase = 0.60
-    static let absorbSpan = (t0: 0.70, t1: 0.86)  // 线被目标吸入
-    static let bloomAt = 0.68
-    static let bloomRise = 0.04, bloomFall = 0.20
-    static let bloomR: CGFloat = 0.95      // × 线宽(核心);光晕 ×1.7
-    static let rippleSpan = (t0: 0.68, t1: 0.94)
-    static let rippleR = (r0: CGFloat(1.6), r1: CGFloat(4.2))   // 一圈细纹,不是声呐
-    static let othersFade = (t0: 0.78, t1: 0.96)
-    static let targetFade = (t0: 0.88, t1: 0.98)
-    static let tailTaper = 0.55
+    static let yTop: CGFloat = -0.08
+    static let widthScale: CGFloat = 0.45   // 雨丝极细
 
-    static func fillDot(_ context: inout GraphicsContext, center: CGPoint, size: CGFloat, radius: CGFloat, color: Color, alpha: Double) {
+    static let lanes: [Lane] = [
+        Lane(x0: 0.06, yLand: 0.60, born: 0.04, dur: 0.42, len: 0.22, alpha: 0.50, hit: false),
+        Lane(x0: 0.22, yLand: 0.55, born: 0.10, dur: 0.40, len: 0.25, alpha: 0.72, hit: false),
+        Lane(x0: 0.37, yLand: 0.58, born: 0.16, dur: 0.42, len: 0.26, alpha: 0.95, hit: true),
+        Lane(x0: 0.55, yLand: 0.57, born: 0.22, dur: 0.38, len: 0.21, alpha: 0.62, hit: false),
+        Lane(x0: 0.72, yLand: 0.62, born: 0.28, dur: 0.42, len: 0.24, alpha: 0.78, hit: false),
+        Lane(x0: 0.88, yLand: 0.59, born: 0.34, dur: 0.40, len: 0.20, alpha: 0.46, hit: false),
+    ]
+
+    /// 风吹斜方向(归一化)
+    static let dirN: CGPoint = {
+        let d = CGPoint(x: 0.36, y: 1)
+        let m = hypot(d.x, d.y)
+        return CGPoint(x: d.x / m, y: d.y / m)
+    }()
+
+    static let builtLanes: [(lane: Lane, path: SampledPath, land: CGPoint)] = {
+        let dir = RainfallMotion.dirN
+        let top = RainfallMotion.yTop
+        return RainfallMotion.lanes.map { lane in
+            let travel = (lane.yLand - top) / dir.y
+            let start = CGPoint(x: lane.x0, y: top)
+            let land = CGPoint(x: start.x + dir.x * travel, y: start.y + dir.y * travel)
+            return (lane, SampledPath.straight(start, land), land)
+        }
+    }()
+
+    static let hitEase = 0.65        // 命中丝减速混合
+    static let absorbDur = 0.12      // 落定后余丝没入水面
+    static let microRipple = (dur: 0.14, r1: 2.3, alpha: 0.18)   // 半径 microR0→r1(×线宽)
+    static let microR0 = 0.8
+    static let ringSquash: CGFloat = 0.42   // 椭圆涟漪纵横比(水面透视)
+    static let bloom = (rise: 0.04, fall: 0.22, r: CGFloat(0.95), haloR: CGFloat(1.4), haloA: 0.10, coreA: 0.9)
+    static let rings: [(delay: Double, dur: Double, r0: Double, r1: Double, alpha: Double)] = [
+        (delay: 0.00, dur: 0.34, r0: 1.4, r1: 5.6, alpha: 0.32),
+        (delay: 0.09, dur: 0.34, r0: 1.0, r1: 4.2, alpha: 0.22),
+    ]
+    static let ringWidth: CGFloat = 0.32    // × 线宽,随扩散衰减
+    static let tailTaper = 0.60
+
+    /// 椭圆涟漪(水面透视)
+    static func strokeRipple(_ context: inout GraphicsContext, center: CGPoint, size: CGFloat,
+                             radius: CGFloat, color: Color, alpha: Double, lineWidth: CGFloat) {
         guard alpha > 0.003 else { return }
         let c = CGPoint(x: center.x * size, y: center.y * size)
-        context.fill(
-            Path(ellipseIn: CGRect(x: c.x - radius, y: c.y - radius, width: radius * 2, height: radius * 2)),
-            with: .color(color.opacity(alpha))
+        let ry = radius * ringSquash
+        context.stroke(
+            Path(ellipseIn: CGRect(x: c.x - radius, y: c.y - ry, width: radius * 2, height: ry * 2)),
+            with: .color(color.opacity(alpha)),
+            style: StrokeStyle(lineWidth: lineWidth)
         )
     }
 
     static let spec = MotionSpec(
-        id: "search-pickup",
+        id: "search-rainfall",
         title: "搜索|拾音",
-        subtitle: "1.7s + 0.4s 停顿 · 雨蓝命中",
+        subtitle: "斜雨落水 · 1.7s + 0.4s · 雨蓝涟漪",
         cycle: cycle
     ) { context, size, phase, dark in
-        let m = PickupMotion.self
+        let m = RainfallMotion.self
         let p = phase * m.cycle / m.active
         guard p < 1 else { return }
         let w = MotionLineWidth.width(for: size) * m.widthScale
         let ink = MotionPalette.stroke(dark: dark)
         let blue = MotionPalette.rain(dark: dark)
 
-        // 头部行进(减速落点)与吸入
-        let u = MotionEase.clamp01((p - m.travelSpan.t0) / (m.travelSpan.t1 - m.travelSpan.t0))
-        let head = MotionEase.lerp(u, MotionEase.easeOutCubic(u), m.travelEase)
-        var tail = head - m.cometLen
-        if p > m.absorbSpan.t0 {
-            let q = MotionEase.clamp01((p - m.absorbSpan.t0) / (m.absorbSpan.t1 - m.absorbSpan.t0))
-            tail = MotionEase.lerp(head - m.cometLen, 1, MotionEase.smoothstep(q))
-        }
-
-        // 微点(候选)
-        let specksAll = m.specks + [m.extraSpeck]
-        for (i, s) in specksAll.enumerated() {
-            let born = MotionEase.lerp(m.spawnSpan.t0, m.spawnSpan.t1, Double(i) / Double(max(1, specksAll.count - 1)))
-            if p < born { continue }
-            let grow = MotionEase.smoothstep(MotionEase.clamp01((p - born) / 0.06))
-            var a = m.speckAlpha * grow
-            var r = m.speckR * w * (1.35 - 0.35 * CGFloat(grow))
-            // 巡访微亮
-            if i < m.speckFractions.count, p >= m.travelSpan.t0, p <= m.travelSpan.t1 + 0.02 {
-                let d = abs(head - m.speckFractions[i])
-                if d < m.flickHalf {
-                    let boost = 1 - d / m.flickHalf
-                    a = MotionEase.lerp(a, m.flickAlpha, MotionEase.smoothstep(boost))
-                    r *= 1 + 0.12 * CGFloat(boost)
+        for entry in m.builtLanes {
+            let lane = entry.lane
+            let u = (p - lane.born) / lane.dur
+            // 雨丝
+            if u > 0 {
+                let head: Double
+                var tail: Double
+                if lane.hit {
+                    let cu = MotionEase.clamp01(u)
+                    head = MotionEase.lerp(cu, MotionEase.easeOutCubic(cu), m.hitEase)
+                    tail = head - lane.len
+                    if u > 1 {
+                        let q = MotionEase.clamp01((p - (lane.born + lane.dur)) / m.absorbDur)
+                        tail = MotionEase.lerp(head - lane.len, 1, MotionEase.smoothstep(q))
+                    }
+                } else {
+                    head = u * (1 + lane.len)   // 线性坠落,尾部随之没入水面
+                    tail = head - lane.len
+                }
+                if tail < 1 {
+                    entry.path.drawWindow(
+                        in: &context, size: size, tail: tail, head: min(1, head),
+                        style: .init(
+                            color: ink, width: w, taper: m.tailTaper, wrap: false,
+                            masterAlpha: lane.alpha,
+                            headDot: false   // 雨丝要利落,不要蝌蚪头
+                        )
+                    )
                 }
             }
-            // 其余淡去
-            if p > m.othersFade.t0 {
-                let q = MotionEase.clamp01((p - m.othersFade.t0) / (m.othersFade.t1 - m.othersFade.t0))
-                a *= 1 - MotionEase.smoothstep(q)
+            // 落水微澜(墨色,极淡)
+            if !lane.hit {
+                let tLand = lane.born + lane.dur / (1 + lane.len)
+                let q = (p - tLand) / m.microRipple.dur
+                if q > 0, q < 1 {
+                    let rr = CGFloat(MotionEase.lerp(m.microR0, m.microRipple.r1, MotionEase.easeOutCubic(q))) * w
+                    m.strokeRipple(
+                        &context, center: entry.land, size: size, radius: rr,
+                        color: ink, alpha: m.microRipple.alpha * (1 - q) * lane.alpha,
+                        lineWidth: max(0.4, w * 0.3)
+                    )
+                }
             }
-            m.fillDot(&context, center: s, size: size, radius: r, color: ink, alpha: a)
         }
 
-        // 目标微点(也随雨错峰落下;最后随蓝一起淡去)
-        if p >= m.targetBorn {
-            let grow = MotionEase.smoothstep(MotionEase.clamp01((p - m.targetBorn) / 0.06))
-            var a = (m.speckAlpha + 0.10) * grow
-            let r = m.targetR * w * (1.35 - 0.35 * CGFloat(grow))
-            if p > m.targetFade.t0 {
-                let q = MotionEase.clamp01((p - m.targetFade.t0) / (m.targetFade.t1 - m.targetFade.t0))
-                a *= 1 - MotionEase.smoothstep(q)
-            }
-            m.fillDot(&context, center: m.target, size: size, radius: r, color: ink, alpha: a)
-        }
-
-        // 巡访线
-        if p >= m.travelSpan.t0, tail < 1 {
-            m.route.drawWindow(
-                in: &context, size: size, tail: tail, head: head,
-                style: .init(
-                    color: ink, width: w, taper: m.tailTaper, wrap: false,
-                    headDot: head < 0.999
-                )
-            )
-        }
-
-        // 命中:雨蓝辉光
-        let tb = p - m.bloomAt
-        if tb > 0, tb < m.bloomRise + m.bloomFall {
-            let rise = MotionEase.clamp01(tb / m.bloomRise)
-            let fall = MotionEase.clamp01((tb - m.bloomRise) / m.bloomFall)
+        // 命中:雨蓝辉光 + 双圈椭圆涟漪
+        guard let hitEntry = m.builtLanes.first(where: { $0.lane.hit }) else { return }
+        let hitAt = hitEntry.lane.born + hitEntry.lane.dur
+        let tb = p - hitAt
+        if tb > 0, tb < m.bloom.rise + m.bloom.fall {
+            let rise = MotionEase.clamp01(tb / m.bloom.rise)
+            let fall = MotionEase.clamp01((tb - m.bloom.rise) / m.bloom.fall)
             let alpha = MotionEase.easeOutCubic(rise) * (1 - MotionEase.easeInQuad(fall))
-            let r = m.bloomR * w * (0.55 + 0.45 * CGFloat(MotionEase.easeOutCubic(rise)))
-            m.fillDot(&context, center: m.target, size: size, radius: r * 1.7, color: blue, alpha: alpha * 0.15)
-            m.fillDot(&context, center: m.target, size: size, radius: r, color: blue, alpha: alpha * 0.9)
-        }
-
-        // 命中:一圈发丝涟漪
-        if p >= m.rippleSpan.t0, p <= m.rippleSpan.t1 {
-            let q = (p - m.rippleSpan.t0) / (m.rippleSpan.t1 - m.rippleSpan.t0)
-            let rr = MotionEase.lerp(Double(m.rippleR.r0), Double(m.rippleR.r1), MotionEase.easeOutCubic(q)) * Double(w)
-            let center = CGPoint(x: m.target.x * size, y: m.target.y * size)
-            let radius = CGFloat(rr)
-            let lineWidth = max(0.4, w * 0.35 * CGFloat(1 - q))
-            context.stroke(
-                Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)),
-                with: .color(blue.opacity(0.30 * (1 - q))),
-                style: StrokeStyle(lineWidth: lineWidth)
+            let r = m.bloom.r * w * (0.55 + 0.45 * CGFloat(MotionEase.easeOutCubic(rise)))
+            let c = CGPoint(x: hitEntry.land.x * size, y: hitEntry.land.y * size)
+            context.fill(
+                Path(ellipseIn: CGRect(x: c.x - r * m.bloom.haloR, y: c.y - r * m.bloom.haloR,
+                                       width: r * m.bloom.haloR * 2, height: r * m.bloom.haloR * 2)),
+                with: .color(blue.opacity(alpha * m.bloom.haloA))
             )
+            context.fill(
+                Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)),
+                with: .color(blue.opacity(alpha * m.bloom.coreA))
+            )
+        }
+        for ring in m.rings {
+            let q = (tb - ring.delay) / ring.dur
+            if q > 0, q < 1 {
+                let rr = CGFloat(MotionEase.lerp(ring.r0, ring.r1, MotionEase.easeOutCubic(q))) * w
+                m.strokeRipple(
+                    &context, center: hitEntry.land, size: size, radius: rr,
+                    color: blue, alpha: ring.alpha * (1 - q),
+                    lineWidth: max(0.4, w * m.ringWidth * CGFloat(1 - 0.7 * q))
+                )
+            }
         }
     }
 }
@@ -275,6 +396,6 @@ enum PickupMotion {
 enum MotionCatalog {
     static let all: [MotionSpec] = [
         DraftingMotion.spec,
-        PickupMotion.spec,
+        RainfallMotion.spec,
     ]
 }

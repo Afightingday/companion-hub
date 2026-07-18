@@ -83,6 +83,13 @@ struct SampledPath {
         return SampledPath(segments: [Cubic(p0: p0, c1: c1, c2: c2, p1: p2)], perSegment: 96)
     }
 
+    /// 直线段(雨丝等)
+    static func straight(_ a: CGPoint, _ b: CGPoint) -> SampledPath {
+        let c1 = CGPoint(x: a.x + (b.x - a.x) / 3, y: a.y + (b.y - a.y) / 3)
+        let c2 = CGPoint(x: a.x + (b.x - a.x) * 2 / 3, y: a.y + (b.y - a.y) * 2 / 3)
+        return SampledPath(segments: [Cubic(p0: a, c1: c1, c2: c2, p1: b)], perSegment: 24)
+    }
+
     /// 向心 Catmull-Rom 四点 → 三次贝塞尔(标准公式)
     private static func crSegment(_ p0: CGPoint, _ p1: CGPoint, _ p2: CGPoint, _ p3: CGPoint) -> Cubic {
         let alpha: CGFloat = 0.5
