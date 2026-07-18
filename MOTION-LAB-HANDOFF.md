@@ -8,13 +8,16 @@
 
 ## 2. 仓库与分支
 
-- 公仓：`Afightingday/companion-hub`
-- 工作分支：`codex/line-animation-study`
-- 分支起点：公仓 `main` 的提交 `cd64109`
+- 私仓源码：`lulu-jun/yushi-liuxing`
+- 本地项目根目录：`C:\Users\batian\Projects\yushi`
+- 私仓工作分支：`codex/line-animation-study`
+- 私仓分支起点：提交 `e3eb3d1`
+- 公仓 CI 镜像：`Afightingday/companion-hub`
+- 公仓镜像分支：`codex/line-animation-study`
 - 最低系统：iOS 26
-- 当前用户没有 Mac，最终视觉验收需要 GitHub Actions 的 macOS Runner。
+- 当前用户没有 Mac，最终视觉验收由公仓 GitHub Actions 的 macOS Runner 完成。
 
-公仓是私仓 `apps/ios` 的单向镜像。动画工作保持在本分支内，不要依赖私仓同步脚本自动维护此分支。
+所有动画源码只在私仓 `apps/ios` 中创作和提交。公仓同名分支由 `apps/ios/sync-to-public.ps1` 重建，只负责 macOS CI；不要直接在公仓修改动画源码。
 
 ## 3. 已确认的视觉方向
 
@@ -103,7 +106,7 @@
 
 ## 6. 交付形态
 
-建立一个独立的 SwiftUI 动画展板或小型预览 Target：
+私仓已提供独立的 `YushiMotionLab` SwiftUI 预览 Target：
 
 - 与正式 `Yushi` App 的业务界面隔离。
 - 能单独查看每个 20–28 pt 动画。
@@ -111,7 +114,7 @@
 - 不需要真实聊天消息、工具调用或网络请求来驱动。
 - 不修改聊天页、Gateway、ProviderEvent、工具注册或数据模型。
 
-由于用户没有 Mac，建议为展板增加独立 GitHub Actions workflow，在 macOS Runner 上：
+私仓 `apps/ios/ci/motion-lab-preview.yml` 会被同步为公仓 `.github/workflows/motion-lab-preview.yml`，并在 macOS Runner 上：
 
 1. 构建动画展板。
 2. 启动 iOS Simulator。
@@ -119,7 +122,13 @@
 4. 用 `xcrun simctl io screenshot` 输出截图。
 5. 将 MP4、截图和可选的无签名 IPA 上传为 Actions Artifacts。
 
-这条 workflow 只服务动画视觉验收，不要混入正式 App 的发布逻辑。
+这条 workflow 只服务动画视觉验收，不要混入正式 App 的发布逻辑。需要预览时，从私仓根目录运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\apps\ios\sync-to-public.ps1 `
+  -Message "sync: update Motion Lab preview" `
+  -PublicBranch "codex/line-animation-study"
+```
 
 ## 7. 明确不做
 
@@ -135,7 +144,7 @@
 
 ## 8. 下一窗口的推荐起点
 
-不要一次性制作全部九个动画。先做两个最能定调整套语言的原型：
+在私仓 `codex/line-animation-study` 分支继续，先阅读本文件，再编辑 `apps/ios/MotionLab/`。不要重新创建 Target、同步脚本或录制 workflow，也不要一次性制作全部九个动画。先做两个最能定调整套语言的原型：
 
 1. `Thinking｜寻径`：验证有机墨线、雨水运动和循环呼吸。
 2. `计算｜归一` 或 `搜索｜听雨`：验证工具动画的几何秩序与点缀色。
@@ -154,4 +163,4 @@
 
 ## 10. 给接手 Codex 的一句话
 
-只做一套 20–28 pt、墨线 × 雨水 × 星轨流形风格的 SwiftUI 私人动画展板；先产出 Thinking 和一枚工具动画的 CI 预览视频，向用户确认视觉后再扩展，绝不提前接业务逻辑。
+在私仓 `yushi-liuxing` 的 `codex/line-animation-study` 分支，只做一套 20–28 pt、墨线 × 雨水 × 星轨流形风格的 SwiftUI 私人动画展板；先产出 Thinking 和一枚工具动画，经公仓镜像 CI 生成预览视频，向用户确认视觉后再扩展，绝不提前接业务逻辑。

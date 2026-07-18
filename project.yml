@@ -39,3 +39,23 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         SWIFT_EMIT_LOC_STRINGS: NO
+
+  YushiMotionLab:
+    type: application
+    platform: iOS
+    sources:
+      - MotionLab
+    info:
+      path: MotionLab/Info.plist
+      properties:
+        CFBundleDisplayName: 流形试验场
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.yushi.motionlab
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_EMIT_LOC_STRINGS: NO
