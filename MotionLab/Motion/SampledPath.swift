@@ -59,6 +59,21 @@ struct SampledPath {
         return SampledPath(segments: segs, perSegment: perSegment)
     }
 
+    /// 开放向心 Catmull-Rom(端点重复)——手写笔画、巡访路线等非闭合线
+    static func openCatmullRom(_ points: [CGPoint], perSegment: Int = 48) -> SampledPath {
+        let n = points.count
+        var segs: [Cubic] = []
+        for i in 0..<(n - 1) {
+            segs.append(crSegment(
+                points[max(0, i - 1)],
+                points[i],
+                points[i + 1],
+                points[min(n - 1, i + 2)]
+            ))
+        }
+        return SampledPath(segments: segs, perSegment: perSegment)
+    }
+
     /// 过定点二次贝塞尔:曲线在 t = 0.5 恰过 X(升为三次后采样)
     static func quadThrough(_ p0: CGPoint, _ x: CGPoint, _ p2: CGPoint) -> SampledPath {
         let mid = CGPoint(x: (p0.x + p2.x) / 2, y: (p0.y + p2.y) / 2)
@@ -131,10 +146,28 @@ struct SampledPath {
         let taper: Double
         /// 闭合路线允许窗口跨过起终点
         let wrap: Bool
+        /// 整体透明度(消散包络等)
+        let masterAlpha: Double
+        /// 整体平移(单位空间;墨沉等)
+        let drift: CGPoint
+        /// 头部圆点收口
+        let headDot: Bool
+
+        init(color: Color, width: CGFloat, taper: Double, wrap: Bool,
+             masterAlpha: Double = 1, drift: CGPoint = .zero, headDot: Bool = true) {
+            self.color = color
+            self.width = width
+            self.taper = taper
+            self.wrap = wrap
+            self.masterAlpha = masterAlpha
+            self.drift = drift
+            self.headDot = headDot
+        }
     }
 
     /// 拖尾窗口:切成小片做透明度渐变;片间平头相接避免圆帽叠加,头部圆点收口。
     func drawWindow(in context: inout GraphicsContext, size: CGFloat, tail: Double, head: Double, style: WindowStyle) {
+        guard style.masterAlpha > 0 else { return }
         let sliceCount = 28
         var spans: [(Double, Double)] = []
         if style.wrap {
@@ -147,6 +180,10 @@ struct SampledPath {
         }
         let winLen = head - tail
         guard winLen > 1e-9 else { return }
+
+        func place(_ p: CGPoint) -> CGPoint {
+            CGPoint(x: (p.x + style.drift.x) * size, y: (p.y + style.drift.y) * size)
+        }
 
         let strokeStyle = StrokeStyle(lineWidth: style.width, lineCap: .butt, lineJoin: .round)
         for (s0, s1) in spans {
@@ -166,23 +203,28 @@ struct SampledPath {
                 let alpha = wMid < style.taper ? MotionEase.smoothstep(wMid / style.taper) : 1
                 guard let segment = slice(from: f0, to: f1) else { continue }
                 var path = Path()
-                path.move(to: segment[0].scaled(by: size))
+                path.move(to: place(segment[0]))
                 for p in segment.dropFirst() {
-                    path.addLine(to: p.scaled(by: size))
+                    path.addLine(to: place(p))
                 }
-                context.stroke(path, with: .color(style.color.opacity(alpha)), style: strokeStyle)
+                context.stroke(
+                    path,
+                    with: .color(style.color.opacity(alpha * style.masterAlpha)),
+                    style: strokeStyle
+                )
             }
         }
 
         // 头部圆点收口
+        guard style.headDot else { return }
         let headFraction = style.wrap
             ? ((head.truncatingRemainder(dividingBy: 1)) + 1).truncatingRemainder(dividingBy: 1)
             : min(1, head)
-        let hp = point(at: headFraction).scaled(by: size)
+        let hp = place(point(at: headFraction))
         let r = style.width / 2
         context.fill(
             Path(ellipseIn: CGRect(x: hp.x - r, y: hp.y - r, width: r * 2, height: r * 2)),
-            with: .color(style.color)
+            with: .color(style.color.opacity(style.masterAlpha))
         )
     }
 }
