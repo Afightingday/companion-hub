@@ -1,8 +1,8 @@
-# 雨师流形 · 私人线条动画交接
+# 雨施流形 · 私人线条动画交接
 
 ## 1. 任务目标
 
-为「雨师流形」设计一套私人、艺术化的抽象线条动画，供 AI 的 Thinking 与工具调用场景使用。
+为「雨施流形」设计一套私人、艺术化的抽象线条动画，供 AI 的 Thinking 与工具调用场景使用。
 
 本分支只负责把动画效果本身设计、实现并展示出来。它是一个独立的 SwiftUI 动画实验室，不负责把动画接入聊天、Gateway 或 ProviderEvent。
 
@@ -11,7 +11,7 @@
 - 公仓：`Afightingday/companion-hub`
 - 工作分支：`codex/line-animation-study`
 - 分支起点：公仓 `main` 的提交 `cd64109`
-- 最低系统：iOS 17
+- 最低系统：iOS 26
 - 当前用户没有 Mac，最终视觉验收需要 GitHub Actions 的 macOS Runner。
 
 公仓是私仓 `apps/ios` 的单向镜像。动画工作保持在本分支内，不要依赖私仓同步脚本自动维护此分支。
@@ -91,12 +91,12 @@
 
 优先制作一个轻量的 SwiftUI 线条动画系统：
 
-- 使用原生 `Path` / `Shape` / `Canvas` / `TimelineView` 等 iOS 17 可用能力。
+- 使用原生 `Path` / `Shape` / `Canvas` / `TimelineView` 等 iOS 26 SwiftUI 能力。
 - 用一套共享的运动语法表达生长、汇流、折返、环绕、结点与消散。
 - 每个动画拥有独立轨迹和节奏，但共享线宽、圆头、颜色与渲染规则。
 - 不使用 PNG 序列帧。
 - 不引入 Lottie 或 Rive。
-- 不依赖 iOS 26，也与 Liquid Glass 无关。
+- 以 iOS 26 为最低目标；动画本身与 Liquid Glass 无关。
 - 视觉概念本身保持平台无关；SwiftUI 只是当前渲染载体。
 
 大致动效节奏曾讨论为：Thinking 每轮约 1.8–2.4 秒，工具动画每轮约 1.2–1.8 秒。该范围是初步方向，不是最终锁定值，应以实机 / 模拟器观感继续打磨。
