@@ -1,0 +1,52 @@
+# CI：Linux 跑核心包单测 + macOS 出无签名 IPA（SideStore/AltStore 自签安装用）。
+# 安全基线：GITHUB_TOKEN 只读；不用 pull_request_target；外来 PR 首次运行需人工批准（仓库设置里勾）。
+# （此文件由同步脚本落位到公仓 .github/workflows/；私仓自身不跑 macOS workflow——免费额度按 10 倍扣。）
+name: iOS
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-tests:
+    name: YushiKit 单测（Linux Swift）
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test --package-path Core
+
+  build-unsigned-ipa:
+    name: 无签名 IPA（SideStore 自签用）
+    # iOS 26 目标需要 Xcode 26 SDK（macos-26 自带）
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+      - name: 生成工程
+        run: xcodegen generate
+      - name: 编译（不签名）
+        run: >
+          xcodebuild build
+          -project Yushi.xcodeproj
+          -scheme Yushi
+          -configuration Release
+          -destination 'generic/platform=iOS'
+          -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGN_IDENTITY=""
+      - name: 打包 IPA
+        run: |
+          mkdir Payload
+          cp -R "build/Build/Products/Release-iphoneos/Yushi.app" Payload/
+          zip -qry Yushi-unsigned.ipa Payload
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: yushi-unsigned-ipa
+          path: Yushi-unsigned.ipa
+          retention-days: 30

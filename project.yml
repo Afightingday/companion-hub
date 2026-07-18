@@ -1,0 +1,41 @@
+# XcodeGen 工程定义。Yushi.xcodeproj 由 `xcodegen generate` 生成，不入库。
+# 公仓 CI（ci/ios-build.yml）与本地 Mac 都从这份文件出工程。
+name: Yushi
+options:
+  bundleIdPrefix: app.yushi
+  deploymentTarget:
+    iOS: "26.0" # 全量拥抱 Liquid Glass（决策 E）：唯一用户自装，不做 17–25 兼容
+  createIntermediateGroups: true
+
+packages:
+  YushiKit:
+    path: Core
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  Yushi:
+    type: application
+    platform: iOS
+    sources:
+      - App
+    dependencies:
+      - package: YushiKit
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: 雨施流形
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.yushi.ios
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_EMIT_LOC_STRINGS: NO
