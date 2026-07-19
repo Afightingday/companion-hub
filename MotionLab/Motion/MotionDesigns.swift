@@ -13,72 +13,136 @@ struct MotionSpec: Identifiable {
     let draw: (_ context: inout GraphicsContext, _ size: CGFloat, _ phase: Double, _ dark: Bool) -> Void
 }
 
-// MARK: - Thinking|起草(可见笔)
+// MARK: - Thinking|起草 v4:用户钢笔书写「祐」(甲骨文)
 
-/// 一支线艺勾勒的笔正在写不可读的行书:笔随书写微颤,词间小提笔,
-/// 写完悬笔一拍(在想),再大提笔换行;写过的句子墨入水般下沉消散。
-/// 笔尖位置全程连续,双句各占半周期,无缝。常量与草样 1:1。
+/// 笔 = 用户 SVG(writing-pen-monochrome-v2,见 design-refs/)原样描线,
+///      笔尖锚点 (128,226),笔长 199(256 空间),小尺寸省略细节线。
+/// 祐 = 以用户填充轮廓 SVG 为底稿手工配准的 10 笔中心线;
+///      单字循环:写 → 悬笔端详 → 墨沉消散 → 回笔蓄势。笔尖全程连续。
+/// 常量与草样(motion-sketch.html v4)1:1。
 enum DraftingMotion {
-    static let cycle = 3.6
+    static let cycle = 4.4
 
-    struct Phrase {
-        let paths: [SampledPath]
-        let spans: [(Double, Double)]
-    }
+    // ---- 字形 ----
+    static let glyphBox = CGRect(x: 0.17, y: 0.19, width: 0.45, height: 0.62)   // 812:1118
 
-    static let wordGap = 0.14      // 词间提笔占书写段比例(提笔要看得见)
+    /// 字形归一化坐标(x/812, y/1118)。笔顺:示旁 二+三竖(中竖最长)→ 横折长竖钩 → 中横 → 匣顶 → 匣左底 → 匣内横
+    static let strokePoints: [[CGPoint]] = [
+        [CGPoint(x: 0.12, y: 0.081), CGPoint(x: 0.24, y: 0.070), CGPoint(x: 0.356, y: 0.073)],
+        [CGPoint(x: 0.078, y: 0.177), CGPoint(x: 0.26, y: 0.166), CGPoint(x: 0.456, y: 0.169)],
+        [CGPoint(x: 0.144, y: 0.234), CGPoint(x: 0.132, y: 0.44), CGPoint(x: 0.140, y: 0.60), CGPoint(x: 0.150, y: 0.70)],
+        [CGPoint(x: 0.256, y: 0.20), CGPoint(x: 0.262, y: 0.52), CGPoint(x: 0.258, y: 0.84)],
+        [CGPoint(x: 0.389, y: 0.242), CGPoint(x: 0.398, y: 0.46), CGPoint(x: 0.396, y: 0.69)],
+        [CGPoint(x: 0.556, y: 0.152), CGPoint(x: 0.75, y: 0.132), CGPoint(x: 0.905, y: 0.138),
+         CGPoint(x: 0.940, y: 0.22), CGPoint(x: 0.915, y: 0.50), CGPoint(x: 0.878, y: 0.85)],
+        [CGPoint(x: 0.556, y: 0.319), CGPoint(x: 0.68, y: 0.306), CGPoint(x: 0.80, y: 0.310)],
+        [CGPoint(x: 0.578, y: 0.412), CGPoint(x: 0.836, y: 0.405)],
+        [CGPoint(x: 0.593, y: 0.422), CGPoint(x: 0.567, y: 0.56), CGPoint(x: 0.63, y: 0.682), CGPoint(x: 0.833, y: 0.672)],
+        [CGPoint(x: 0.627, y: 0.512), CGPoint(x: 0.782, y: 0.505)],
+    ]
 
-    /// 每句 = 若干笔画(词);隆起间距须 ≳ 2× 线宽,否则墨挤成团
-    static let phrases: [Phrase] = {
-        let strokeSets: [[[CGPoint]]] = [
-            [
-                [CGPoint(x: 0.10, y: 0.475), CGPoint(x: 0.155, y: 0.370), CGPoint(x: 0.21, y: 0.490),
-                 CGPoint(x: 0.265, y: 0.375), CGPoint(x: 0.32, y: 0.495)],
-                [CGPoint(x: 0.40, y: 0.490), CGPoint(x: 0.435, y: 0.295), CGPoint(x: 0.475, y: 0.495),
-                 CGPoint(x: 0.545, y: 0.380), CGPoint(x: 0.615, y: 0.505), CGPoint(x: 0.70, y: 0.415)],
-            ],
-            [
-                [CGPoint(x: 0.14, y: 0.700), CGPoint(x: 0.19, y: 0.585), CGPoint(x: 0.245, y: 0.705),
-                 CGPoint(x: 0.30, y: 0.595), CGPoint(x: 0.355, y: 0.710)],
-                [CGPoint(x: 0.43, y: 0.705), CGPoint(x: 0.50, y: 0.580), CGPoint(x: 0.565, y: 0.715),
-                 CGPoint(x: 0.65, y: 0.605)],
-            ],
-        ]
-        return strokeSets.map { strokes in
-            let gap = DraftingMotion.wordGap
-            let paths = strokes.map { SampledPath.openCatmullRom($0) }
-            let totalLen = paths.reduce(CGFloat(0)) { $0 + $1.total }
-            let gaps = Double(paths.count - 1) * gap
-            var spans: [(Double, Double)] = []
-            var t = 0.0
-            for path in paths {
-                let share = (1 - gaps) * Double(path.total / totalLen)
-                spans.append((t, t + share))
-                t += share + gap
-            }
-            return Phrase(paths: paths, spans: spans)
+    static let strokes: [SampledPath] = {
+        let box = DraftingMotion.glyphBox
+        return DraftingMotion.strokePoints.map { pts in
+            SampledPath.openCatmullRom(pts.map { p in
+                CGPoint(x: box.minX + p.x * box.width, y: box.minY + p.y * box.height)
+            })
         }
     }()
 
-    static let writeEnd = 0.38     // 句内相位:书写结束(半窗 0.5 内含悬笔+换行)
-    static let holdEnd = 0.50      // 悬置结束、开始消散
-    static let fadeEnd = 0.66      // 消散完毕
+    static let strokeGap = 0.020    // 笔画间提笔(占书写段比例)
+
+    static let spans: [(Double, Double)] = {
+        let paths = DraftingMotion.strokes
+        let gap = DraftingMotion.strokeGap
+        let totalLen = paths.reduce(CGFloat(0)) { $0 + $1.total }
+        let gaps = Double(paths.count - 1) * gap
+        var spans: [(Double, Double)] = []
+        var t = 0.0
+        for path in paths {
+            let share = (1 - gaps) * Double(path.total / totalLen)
+            spans.append((t, t + share))
+            t += share + gap
+        }
+        return spans
+    }()
+
+    // ---- 时间线 ----
+    static let writeSpan = (t0: 0.02, t1: 0.60)
+    static let hoverEnd = 0.68               // [writeEnd, hoverEnd] 悬笔端详
+    static let fadeSpan = (t0: 0.70, t1: 0.90)   // 墨沉消散
+    static let returnSpan = (t0: 0.68, t1: 0.96) // 回笔(与消散重叠)
     static let sinkDrift: CGFloat = 0.022
     static let agingTaper = 0.04
-    static let widthScale: CGFloat = 0.62   // 字迹比笔细,层次
+    static let widthScale: CGFloat = 0.62    // 字迹线宽比
 
-    // 笔(线艺,局部坐标笔尖在原点、笔杆朝上,再整体旋转)
-    static let penAngle = 0.55     // rad,右倾书写姿态
-    static let penWobble = 0.05    // rad,书写微颤幅度
-    static let penWobbleFreq = 9.0 // 每周期颤动次数
-    static let penWidthScale: CGFloat = 0.50   // 笔是线艺勾勒,不是实心棒
-    static let penLen: CGFloat = 0.24
-    static let penNibLen: CGFloat = 0.055
-    static let penNibHalf: CGFloat = 0.017
-    static let hoverEnd = 0.44     // [writeEnd,hoverEnd] 悬笔思考;[hoverEnd,0.5] 换行
-    static let gapLift = 0.05      // 词间提笔高度
-    static let hopLift = 0.10      // 换行提笔高度
-    static let hoverBob = 0.007    // 悬笔呼吸幅度
+    // ---- 笔 ----
+    static let penLenUnit: CGFloat = 0.34    // 笔长(单位空间)
+    static let penSvgLen: CGFloat = 199      // SVG 空间笔长(y 27→226)
+    static let penTip = CGPoint(x: 128, y: 226)
+    static let penAngle = 38.0 * Double.pi / 180   // 用户 SVG 的书写倾角
+    static let penWobble = 0.035
+    static let penWobbleFreq = 11.0
+    static let penWidthScale: CGFloat = 0.50 // 笔主线宽比;细节线 ×0.75
+    static let penDetailMin: CGFloat = 64    // 画布小于此值省略细节线
+    static let gapLift = 0.045
+    static let hopLift = 0.12
+    static let hoverBob = 0.007
+
+    /// 用户钢笔 SVG 主体线(256 空间):笔身胶囊 + 握位四线 + 笔尖 V
+    static let penMainPaths: [Path] = {
+        var body = Path()
+        body.move(to: CGPoint(x: 128, y: 27))
+        body.addCurve(to: CGPoint(x: 112.5, y: 42.5), control1: CGPoint(x: 119.4, y: 27), control2: CGPoint(x: 112.5, y: 33.9))
+        body.addLine(to: CGPoint(x: 112.5, y: 128.5))
+        body.addCurve(to: CGPoint(x: 123, y: 139), control1: CGPoint(x: 112.5, y: 134.3), control2: CGPoint(x: 117.2, y: 139))
+        body.addLine(to: CGPoint(x: 133, y: 139))
+        body.addCurve(to: CGPoint(x: 143.5, y: 128.5), control1: CGPoint(x: 138.8, y: 139), control2: CGPoint(x: 143.5, y: 134.3))
+        body.addLine(to: CGPoint(x: 143.5, y: 42.5))
+        body.addCurve(to: CGPoint(x: 128, y: 27), control1: CGPoint(x: 143.5, y: 33.9), control2: CGPoint(x: 136.6, y: 27))
+        body.closeSubpath()
+
+        func line(_ a: CGPoint, _ b: CGPoint) -> Path {
+            var p = Path(); p.move(to: a); p.addLine(to: b); return p
+        }
+
+        var nib = Path()
+        nib.move(to: CGPoint(x: 121, y: 171))
+        nib.addCurve(to: CGPoint(x: 128, y: 226), control1: CGPoint(x: 120.5, y: 187.5), control2: CGPoint(x: 122.8, y: 203.5))
+        nib.addCurve(to: CGPoint(x: 135, y: 171), control1: CGPoint(x: 133.2, y: 203.5), control2: CGPoint(x: 135.5, y: 187.5))
+        nib.closeSubpath()
+
+        return [
+            body,
+            line(CGPoint(x: 117, y: 139), CGPoint(x: 121, y: 171)),
+            line(CGPoint(x: 139, y: 139), CGPoint(x: 135, y: 171)),
+            line(CGPoint(x: 117, y: 139), CGPoint(x: 139, y: 139)),
+            line(CGPoint(x: 121, y: 171), CGPoint(x: 135, y: 171)),
+            nib,
+        ]
+    }()
+
+    /// 细节线:帽缝、笔夹、尖肩、呼吸孔、笔缝
+    static let penDetailPaths: [Path] = {
+        func line(_ a: CGPoint, _ b: CGPoint) -> Path {
+            var p = Path(); p.move(to: a); p.addLine(to: b); return p
+        }
+        var clip = Path()
+        clip.move(to: CGPoint(x: 136.5, y: 44.5))
+        clip.addCurve(to: CGPoint(x: 136.2, y: 96.5), control1: CGPoint(x: 141.2, y: 58.2), control2: CGPoint(x: 141.1, y: 78.5))
+        clip.addCurve(to: CGPoint(x: 132, y: 104.5), control1: CGPoint(x: 135.1, y: 100.6), control2: CGPoint(x: 133.7, y: 103.2))
+        var shoulder = Path()
+        shoulder.move(to: CGPoint(x: 121.7, y: 178))
+        shoulder.addLine(to: CGPoint(x: 128, y: 187))
+        shoulder.addLine(to: CGPoint(x: 134.3, y: 178))
+        return [
+            line(CGPoint(x: 113, y: 55), CGPoint(x: 143, y: 55)),
+            clip,
+            shoulder,
+            Path(ellipseIn: CGRect(x: 125, y: 184, width: 6, height: 6)),
+            line(CGPoint(x: 128, y: 190), CGPoint(x: 128, y: 223)),
+        ]
+    }()
 
     struct TipState {
         let pos: CGPoint
@@ -86,17 +150,17 @@ enum DraftingMotion {
         let writing: Bool
     }
 
-    /// 书写进度 wp∈[0,1] → 笔尖位置(词内沿笔画;词隙走提笔小弧)
-    static func tipAt(_ phrase: Phrase, _ wp: Double) -> (pos: CGPoint, lift: Double) {
-        for i in 0..<phrase.paths.count {
-            let (t0, t1) = phrase.spans[i]
+    /// 书写进度 wp∈[0,1] → 笔尖(笔画内沿线;笔画间提笔小弧)
+    static func tipAt(_ wp: Double) -> (pos: CGPoint, lift: Double) {
+        for i in 0..<strokes.count {
+            let (t0, t1) = spans[i]
             if wp <= t1 {
                 if wp >= t0 {
-                    return (phrase.paths[i].point(at: (wp - t0) / (t1 - t0)), 0)
+                    return (strokes[i].point(at: (wp - t0) / (t1 - t0)), 0)
                 }
-                let prevEnd = phrase.paths[i - 1].point(at: 1)
-                let curStart = phrase.paths[i].point(at: 0)
-                let g0 = phrase.spans[i - 1].1
+                let prevEnd = strokes[i - 1].point(at: 1)
+                let curStart = strokes[i].point(at: 0)
+                let g0 = spans[i - 1].1
                 let q = (wp - g0) / (t0 - g0)
                 let s = MotionEase.smoothstep(q)
                 let pos = CGPoint(
@@ -106,125 +170,132 @@ enum DraftingMotion {
                 return (pos, gapLift * sin(.pi * q))
             }
         }
-        return (phrase.paths[phrase.paths.count - 1].point(at: 1), 0)
+        return (strokes[strokes.count - 1].point(at: 1), 0)
     }
 
-    /// 全局相位 → 笔尖状态。笔全程连续:写 → 悬笔 → 换行 → 写……
-    static func penState(_ phase: Double) -> TipState {
-        let k = phase < 0.5 ? 0 : 1
-        let pl = phase - 0.5 * Double(k)
-        let cur = phrases[k], nxt = phrases[(k + 1) % 2]
-        if pl < writeEnd {
-            let t = tipAt(cur, pl / writeEnd)
+    /// 全局相位 → 笔尖状态。写 → 悬 → 回笔 → 蓄势 → 写……全程连续。
+    static func penState(_ p: Double) -> TipState {
+        let startPos = strokes[0].point(at: 0)
+        let endPos = strokes[strokes.count - 1].point(at: 1)
+        if p >= writeSpan.t0, p < writeSpan.t1 {
+            let t = tipAt((p - writeSpan.t0) / (writeSpan.t1 - writeSpan.t0))
             return TipState(
                 pos: CGPoint(x: t.pos.x, y: t.pos.y - CGFloat(t.lift)),
                 tilt: 0,
                 writing: t.lift == 0
             )
         }
-        let endPos = cur.paths[cur.paths.count - 1].point(at: 1)
-        if pl < hoverEnd {
-            let q = (pl - writeEnd) / (hoverEnd - writeEnd)
+        if p >= writeSpan.t1, p < hoverEnd {
+            let q = (p - writeSpan.t1) / (hoverEnd - writeSpan.t1)
             return TipState(
                 pos: CGPoint(x: endPos.x, y: endPos.y - CGFloat(hoverBob * sin(2 * .pi * q))),
                 tilt: 0,
                 writing: false
             )
         }
-        let startPos = nxt.paths[0].point(at: 0)
-        let q = (pl - hoverEnd) / (0.5 - hoverEnd)
+        // 回笔与蓄势(蓄势含跨 0 到 writeSpan.t0)
+        var q = 1.0
+        if p >= returnSpan.t0, p < returnSpan.t1 {
+            q = (p - returnSpan.t0) / (returnSpan.t1 - returnSpan.t0)
+        }
+        if q >= 1 {
+            let poiseLen = 1 - returnSpan.t1 + writeSpan.t0
+            let q2 = p >= returnSpan.t1 ? (p - returnSpan.t1) / poiseLen : (p + 1 - returnSpan.t1) / poiseLen
+            let bob = 0.004 + hoverBob * 0.6 * sin(.pi * MotionEase.clamp01(q2))
+            return TipState(
+                pos: CGPoint(x: startPos.x, y: startPos.y - CGFloat(bob)),
+                tilt: 0,
+                writing: false
+            )
+        }
         let s = MotionEase.smoothstep(q)
         return TipState(
             pos: CGPoint(
                 x: endPos.x + (startPos.x - endPos.x) * CGFloat(s),
                 y: endPos.y + (startPos.y - endPos.y) * CGFloat(s) - CGFloat(hopLift * sin(.pi * q))
             ),
-            tilt: 0.16 * sin(.pi * q),
+            tilt: 0.18 * sin(.pi * q),
             writing: false
         )
     }
 
     static func drawPen(_ context: inout GraphicsContext, size: CGFloat, phase: Double, dark: Bool) {
         let st = penState(phase)
-        let w = MotionLineWidth.width(for: size) * penWidthScale
         let color = MotionPalette.stroke(dark: dark)
         let wobble = st.writing ? penWobble * sin(2 * .pi * penWobbleFreq * phase) : 0
         let angle = penAngle + wobble + st.tilt
+        let s = (penLenUnit * size) / penSvgLen
+        let mainW = MotionLineWidth.width(for: size) * penWidthScale
 
         var pctx = context
         pctx.translateBy(x: st.pos.x * size, y: st.pos.y * size)
         pctx.rotate(by: .radians(angle))
+        pctx.scaleBy(x: s, y: s)
+        pctx.translateBy(x: -penTip.x, y: -penTip.y)
 
-        let len = penLen * size
-        let nib = penNibLen * size
-        let nh = penNibHalf * size
-        var pen = Path()
-        pen.move(to: .zero)
-        pen.addLine(to: CGPoint(x: -nh, y: -nib))
-        pen.move(to: .zero)
-        pen.addLine(to: CGPoint(x: nh, y: -nib))
-        pen.move(to: CGPoint(x: 0, y: -nib))
-        pen.addLine(to: CGPoint(x: 0, y: -len))
-        pctx.stroke(
-            pen,
-            with: .color(color),
-            style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round)
-        )
-    }
-
-    /// 句内相位 pLocal ∈ [0,1):书写 [0,writeEnd] → 悬置 → 消散 [holdEnd,fadeEnd]
-    static func drawPhrase(_ context: inout GraphicsContext, size: CGFloat, pLocal: Double, phrase: Phrase, dark: Bool) {
-        let color = MotionPalette.stroke(dark: dark)
-        let w = MotionLineWidth.width(for: size) * widthScale
-        var masterAlpha = 1.0
-        var drift = CGPoint.zero
-        var writeP = 1.0
-        if pLocal < writeEnd {
-            writeP = pLocal / writeEnd
-        } else if pLocal >= holdEnd {
-            let q = MotionEase.clamp01((pLocal - holdEnd) / (fadeEnd - holdEnd))
-            if q >= 1 { return }
-            masterAlpha = 1 - MotionEase.smoothstep(q)
-            drift = CGPoint(x: 0, y: sinkDrift * CGFloat(q))
+        let mainStyle = StrokeStyle(lineWidth: mainW / s, lineCap: .round, lineJoin: .round)
+        for path in penMainPaths {
+            pctx.stroke(path, with: .color(color), style: mainStyle)
         }
-        for (i, path) in phrase.paths.enumerated() {
-            let (t0, t1) = phrase.spans[i]
-            let prog: Double
-            if writeP >= t1 {
-                prog = 1
-            } else if writeP <= t0 {
-                continue     // 该词尚未起笔(或正处词间提笔)
-            } else {
-                prog = (writeP - t0) / (t1 - t0)
+        if size >= penDetailMin {
+            let detailStyle = StrokeStyle(lineWidth: mainW * 0.75 / s, lineCap: .round, lineJoin: .round)
+            for path in penDetailPaths {
+                pctx.stroke(path, with: .color(color), style: detailStyle)
             }
-            path.drawWindow(
-                in: &context, size: size, tail: 0, head: prog,
-                style: .init(
-                    color: color, width: w, taper: agingTaper, wrap: false,
-                    masterAlpha: masterAlpha, drift: drift,
-                    headDot: prog < 1 || pLocal < holdEnd
-                )
-            )
         }
     }
 
     static let spec = MotionSpec(
-        id: "thinking-drafting-pen",
+        id: "thinking-drafting-you",
         title: "Thinking|起草",
-        subtitle: "3.6s · 可见笔 · 写-悬-换行 · 纯墨",
+        subtitle: "4.4s · 钢笔写「祐」 · 无缝 · 纯墨",
         cycle: cycle
     ) { context, size, phase, dark in
         let m = DraftingMotion.self
-        for k in 0..<2 {
-            let shifted = phase - Double(k) * 0.5
-            let pLocal = (shifted.truncatingRemainder(dividingBy: 1) + 1).truncatingRemainder(dividingBy: 1)
-            m.drawPhrase(&context, size: size, pLocal: pLocal, phrase: m.phrases[k], dark: dark)
+        let color = MotionPalette.stroke(dark: dark)
+        let w = MotionLineWidth.width(for: size) * m.widthScale
+
+        var masterAlpha = 1.0
+        var drift = CGPoint.zero
+        let writeP: Double
+        if phase < m.writeSpan.t0 {
+            writeP = 0
+        } else if phase < m.writeSpan.t1 {
+            writeP = (phase - m.writeSpan.t0) / (m.writeSpan.t1 - m.writeSpan.t0)
+        } else {
+            writeP = 1
+        }
+        if phase >= m.fadeSpan.t0 {
+            let q = MotionEase.clamp01((phase - m.fadeSpan.t0) / (m.fadeSpan.t1 - m.fadeSpan.t0))
+            masterAlpha = 1 - MotionEase.smoothstep(q)
+            drift = CGPoint(x: 0, y: m.sinkDrift * CGFloat(q))
+        }
+        if masterAlpha > 0, writeP > 0 {
+            for (i, path) in m.strokes.enumerated() {
+                let (t0, t1) = m.spans[i]
+                let prog: Double
+                if writeP >= t1 {
+                    prog = 1
+                } else if writeP <= t0 {
+                    continue
+                } else {
+                    prog = (writeP - t0) / (t1 - t0)
+                }
+                path.drawWindow(
+                    in: &context, size: size, tail: 0, head: prog,
+                    style: .init(
+                        color: color, width: w, taper: m.agingTaper, wrap: false,
+                        masterAlpha: masterAlpha, drift: drift,
+                        headDot: prog < 1 || phase < m.fadeSpan.t0
+                    )
+                )
+            }
         }
         m.drawPen(&context, size: size, phase: phase, dark: dark)
     }
 }
 
-// MARK: - 搜索|拾音(斜雨涟漪)
+// MARK: - 搜索|拾音(斜雨涟漪,水面居中偏下)
 
 /// 并行的雨丝被风吹斜,落在一条看不见的水面上;
 /// 众丝落下各起一圈墨色微澜,唯命中那根减速落定,
@@ -248,12 +319,12 @@ enum RainfallMotion {
     static let widthScale: CGFloat = 0.45   // 雨丝极细
 
     static let lanes: [Lane] = [
-        Lane(x0: 0.06, yLand: 0.60, born: 0.04, dur: 0.42, len: 0.22, alpha: 0.50, hit: false),
-        Lane(x0: 0.22, yLand: 0.55, born: 0.10, dur: 0.40, len: 0.25, alpha: 0.72, hit: false),
-        Lane(x0: 0.37, yLand: 0.58, born: 0.16, dur: 0.42, len: 0.26, alpha: 0.95, hit: true),
-        Lane(x0: 0.55, yLand: 0.57, born: 0.22, dur: 0.38, len: 0.21, alpha: 0.62, hit: false),
-        Lane(x0: 0.72, yLand: 0.62, born: 0.28, dur: 0.42, len: 0.24, alpha: 0.78, hit: false),
-        Lane(x0: 0.88, yLand: 0.59, born: 0.34, dur: 0.40, len: 0.20, alpha: 0.46, hit: false),
+        Lane(x0: 0.06, yLand: 0.71, born: 0.04, dur: 0.46, len: 0.22, alpha: 0.50, hit: false),
+        Lane(x0: 0.22, yLand: 0.66, born: 0.10, dur: 0.44, len: 0.25, alpha: 0.72, hit: false),
+        Lane(x0: 0.37, yLand: 0.69, born: 0.16, dur: 0.46, len: 0.26, alpha: 0.95, hit: true),
+        Lane(x0: 0.55, yLand: 0.68, born: 0.22, dur: 0.42, len: 0.21, alpha: 0.62, hit: false),
+        Lane(x0: 0.72, yLand: 0.73, born: 0.28, dur: 0.46, len: 0.24, alpha: 0.78, hit: false),
+        Lane(x0: 0.88, yLand: 0.70, born: 0.34, dur: 0.44, len: 0.20, alpha: 0.46, hit: false),
     ]
 
     /// 风吹斜方向(归一化)
@@ -316,7 +387,6 @@ enum RainfallMotion {
         for entry in m.builtLanes {
             let lane = entry.lane
             let u = (p - lane.born) / lane.dur
-            // 雨丝
             if u > 0 {
                 let head: Double
                 var tail: Double

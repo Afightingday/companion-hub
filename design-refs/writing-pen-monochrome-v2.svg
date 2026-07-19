@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="256" height="256" viewBox="0 0 256 256"
+     fill="none">
+  <title>Minimal black line fountain pen</title>
+  <desc>A transparent, monochrome fountain pen drawn only with black lines.</desc>
+
+  <!-- The pen is drawn upright, then angled toward the lower-left writing point. -->
+  <g id="writing-pen"
+     transform="rotate(38 128 128)"
+     stroke="#111111"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     fill="none">
+
+    <g id="pen-body">
+      <!-- Narrow capsule barrel. -->
+      <path d="M128 27
+               C119.4 27 112.5 33.9 112.5 42.5
+               V128.5
+               C112.5 134.3 117.2 139 123 139
+               H133
+               C138.8 139 143.5 134.3 143.5 128.5
+               V42.5
+               C143.5 33.9 136.6 27 128 27Z"
+            stroke-width="4"/>
+
+      <!-- Cap seam and one spare clip line. -->
+      <path d="M113 55H143" stroke-width="3"/>
+      <path d="M136.5 44.5
+               C141.2 58.2 141.1 78.5 136.2 96.5
+               C135.1 100.6 133.7 103.2 132 104.5"
+            stroke-width="3"/>
+    </g>
+
+    <g id="grip">
+      <!-- Two clean tapering sides; the open interior keeps the mark airy. -->
+      <path d="M117 139L121 171" stroke-width="4"/>
+      <path d="M139 139L135 171" stroke-width="4"/>
+      <path d="M117 139H139" stroke-width="3"/>
+      <path d="M121 171H135" stroke-width="3"/>
+    </g>
+
+    <g id="nib">
+      <!-- V-shaped fountain nib terminating at one precise writing point. -->
+      <path d="M121 171
+               C120.5 187.5 122.8 203.5 128 226
+               C133.2 203.5 135.5 187.5 135 171Z"
+            stroke-width="4"/>
+      <path d="M121.7 178L128 187L134.3 178" stroke-width="2.3"/>
+      <circle cx="128" cy="187" r="3" stroke-width="2.3"/>
+      <path d="M128 190V223" stroke-width="2.3"/>
+    </g>
+
+    <!-- Invisible pivot centered on the writing tip for SwiftUI animation. -->
+    <g id="nib-anchor" stroke="none">
+      <rect x="127" y="225" width="2" height="2" fill="#000000" opacity="0"/>
+    </g>
+  </g>
+</svg>
