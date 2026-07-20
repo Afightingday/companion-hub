@@ -8,7 +8,7 @@
 
 ## 2. 仓库与分支
 
-- 私仓源码：`lulu-jun/yushi-liuxing`
+- 私仓源码：`madebyyouyou/yushi-liuxing`（2026-07-20 账号改名，原 `lulu-jun/…`；旧地址 GitHub 会重定向，但请用新地址）
 - 本地项目根目录：`C:\Users\batian\Projects\yushi`
 - 私仓工作分支：`codex/line-animation-study`
 - 私仓分支起点：提交 `e3eb3d1`
