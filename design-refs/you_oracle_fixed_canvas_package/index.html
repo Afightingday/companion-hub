@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>祐字笔画拼合测试</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f3f3f3; color: #222; }
+  .wrap { max-width: 980px; margin: 24px auto; padding: 0 16px 48px; }
+  h1 { font-size: 24px; margin: 0 0 8px; }
+  p { line-height: 1.6; }
+  .stage { position: relative; width: min(420px, 80vw); aspect-ratio: 1052 / 1252; background: #fff; border: 1px solid #ddd; box-shadow: 0 8px 24px rgba(0,0,0,.06); }
+  .stage img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 24px; }
+  .card { background: #fff; border: 1px solid #ddd; border-radius: 12px; padding: 12px; }
+  .thumb { position: relative; width: 100%; aspect-ratio: 1052 / 1252; background: #fafafa; }
+  .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  code { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 2px 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>祐字笔画拼合测试页</h1>
+  <p>本包中的每个单笔 SVG 都是统一全画布：<code>1052 × 1252</code>，并保留原始绝对坐标。把它们放进同一个相对定位容器，设为相同宽高、相同左上角，就能准确拼回完整的「祐」字。</p>
+  <div class="stage" aria-label="祐字拼合预览">
+    <img src="stroke-01.svg" alt="stroke-01" />
+    <img src="stroke-02.svg" alt="stroke-02" />
+    <img src="stroke-03.svg" alt="stroke-03" />
+    <img src="stroke-04.svg" alt="stroke-04" />
+    <img src="stroke-05.svg" alt="stroke-05" />
+    <img src="stroke-06.svg" alt="stroke-06" />
+    <img src="stroke-07.svg" alt="stroke-07" />
+    <img src="stroke-08.svg" alt="stroke-08" />
+    <img src="stroke-09.svg" alt="stroke-09" />
+  </div>
+  <div class="grid">
+    <div class="card"><div class="thumb"><img src="stroke-01.svg" alt="stroke-01" /></div><p>stroke-01</p></div>
+    <div class="card"><div class="thumb"><img src="stroke-02.svg" alt="stroke-02" /></div><p>stroke-02</p></div>
+    <div class="card"><div class="thumb"><img src="stroke-03.svg" alt="stroke-03" /></div><p>stroke-03</p></div>
+    <div class="card"><div class="thumb"><img src="stroke-04.svg" alt="stroke-04" /></div><p>stroke-04</p></div>
+    <div class="card"><div class="thumb"><img src="stroke-05.svg" alt="stroke-05" /></div><p>stroke-05</p></div>
+    <div class="card"><div class="thumb"><img src="stroke-06.svg" alt="stroke-06" /></div><p>stroke-06</p></div>
+    <div class="card"><div class="thumb"><img src="stroke-07.svg" alt="stroke-07" /></div><p>stroke-07</p></div>
+    <div class="card"><div class="thumb"><img src="stroke-08.svg" alt="stroke-08" /></div><p>stroke-08</p></div>
+    <div class="card"><div class="thumb"><img src="stroke-09.svg" alt="stroke-09" /></div><p>stroke-09</p></div>
+  </div>
+</div>
+</body>
+</html>
