@@ -17,7 +17,7 @@ struct MotionSpec: Identifiable {
     let draw: (_ context: inout GraphicsContext, _ size: CGFloat, _ phase: Double, _ dark: Bool) -> Void
 }
 
-// MARK: - Thinking|起草 v8:骨架反推轨迹 + 版面重定 + 书写节奏
+// MARK: - Thinking|起草 v9:曲率控速 + 笔杆倾靠 + 分级停顿
 
 /// 墨迹成品 = 用户 PSD 分层的 9 笔位图(design-refs/you_oracle_fixed_canvas_package,
 /// 画布 1052×1252,层号即笔顺,GlyphStrokes/*.png 打包为资源)。
@@ -29,9 +29,9 @@ struct MotionSpec: Identifiable {
 /// 第 6 笔轨迹反向且横穿「反C」空腔,蒙版扫过空腔无墨可揭 → 一笔裂成两段,末了靠时间片结束跳补;
 /// 早现的那截孤墨其实是它自己的下横(恰在第 7 笔起始横段的高度上,故被误读为第 7 笔提前显现)。
 /// 现改为从位图 alpha 反推中心线(见 layerDefs),配准误差归零,蒙版宽也随之收紧近半。
-/// 常量与草样(motion-sketch.html v8)1:1。
+/// 常量与草样(motion-sketch.html v9)1:1。
 enum DraftingMotion {
-    static let cycle = 4.4
+    static let cycle = 11.0          // v9:用户定 0.4× 速度(4.4 → 11.0s)
 
     // ---- 字形 ----
     /// 九层联合墨盒(画布像素)
@@ -50,6 +50,69 @@ enum DraftingMotion {
         let median: SampledPath
         /// 蒙版宽(单位空间)
         let maskW: CGFloat
+        /// 曲率时间扭曲表(见 makeWarp)
+        let warp: CurvatureWarp
+    }
+
+    // ---- v9:曲率控速(去机械感) ----
+
+    /// 二分之三次幂定律(two-thirds power law):人画曲线时速度与曲率呈 v ∝ κ^(-1/3),
+    /// 弯得越急走得越慢。沿弧长匀速推进正是「机械感」的数学根源。
+    /// t 为归一化时间刻度,索引即等弧长位置;速度比夹在 [1/range, range] 内,
+    /// 免得直线段飙速、拐角处停死。
+    struct CurvatureWarp {
+        let t: [Double]
+        let steps: Int
+    }
+
+    static func makeWarp(_ path: SampledPath,
+                         exponent: Double,
+                         speedRange: Double,
+                         steps: Int = 200) -> CurvatureWarp {
+        var v = [Double]()
+        v.reserveCapacity(steps + 1)
+        let d = 1.0 / Double(steps)
+        for i in 0...steps {
+            let f = Double(i) / Double(steps)
+            let a = path.point(at: max(0, f - d))
+            let b = path.point(at: f)
+            let c = path.point(at: min(1, f + d))
+            let ab = hypot(Double(b.x - a.x), Double(b.y - a.y))
+            let bc = hypot(Double(c.x - b.x), Double(c.y - b.y))
+            let ca = hypot(Double(a.x - c.x), Double(a.y - c.y))
+            let area = abs(Double(b.x - a.x) * Double(c.y - a.y)
+                         - Double(c.x - a.x) * Double(b.y - a.y)) / 2
+            let denom = ab * bc * ca
+            let k = denom > 1e-12 ? 4 * area / denom : 0      // 三点外接圆曲率
+            v.append(pow(k + 1e-4, -exponent))
+        }
+        let mean = v.reduce(0, +) / Double(v.count)
+        for i in 0...steps {
+            v[i] = min(speedRange, max(1 / speedRange, v[i] / mean))
+        }
+        var t = [0.0]
+        t.reserveCapacity(steps + 1)
+        for i in 1...steps {
+            t.append(t[i - 1] + d / ((v[i] + v[i - 1]) / 2))   // dt = ds / v
+        }
+        let total = t[steps]
+        for i in 0...steps { t[i] /= total }
+        return CurvatureWarp(t: t, steps: steps)
+    }
+
+    /// 时间比例 p → 弧长比例
+    static func warpAt(_ w: CurvatureWarp, _ p: Double) -> Double {
+        let q = MotionEase.clamp01(p)
+        var lo = 0
+        var hi = w.steps
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if w.t[mid] < q { lo = mid + 1 } else { hi = mid }
+        }
+        let i = max(1, lo)
+        let span = w.t[i] - w.t[i - 1]
+        let f = span > 1e-9 ? (q - w.t[i - 1]) / span : 0
+        return (Double(i - 1) + f) / Double(w.steps)
     }
 
     /// 定义:画布放置 (x,y,w,h) + 轨迹(联合盒归一化坐标)+ 蒙版宽。层序即笔顺。
@@ -143,7 +206,13 @@ enum DraftingMotion {
                 width: def.w / u.width * box.width,
                 height: def.h / u.height * box.height
             )
-            return Layer(name: def.n, dest: dest, median: SampledPath.openCatmullRom(mapped), maskW: def.maskW)
+            let median = SampledPath.openCatmullRom(mapped)
+            return Layer(
+                name: def.n, dest: dest, median: median, maskW: def.maskW,
+                warp: DraftingMotion.makeWarp(median,
+                                              exponent: DraftingMotion.curveExponent,
+                                              speedRange: DraftingMotion.curveSpeedRange)
+            )
         }
     }()
 
@@ -154,19 +223,35 @@ enum DraftingMotion {
         }
     }()
 
-    static let strokeGap = 0.020    // 笔画间提笔(占书写段比例)
+    static let strokeGap = 0.020    // 笔画间提笔基数(占书写段比例)
 
+    // ---- v9:去机械感(用户反馈「还是很硬」) ----
+    /// 曲率控速:v ∝ κ^(-curveExponent),速度比夹在 [1/curveSpeedRange, curveSpeedRange]
+    static let curveExponent = 0.3333
+    static let curveSpeedRange = 1.40
+    /// 等时性(isochrony):笔越长写得越快,故时间片 ∝ 长度^alpha 而非 ∝ 长度
+    static let isochronyAlpha = 0.65
+    /// 笔画间停顿按字形层级分级(8 个间隙,倍率乘以 strokeGap)。
+    /// 祐 = 礻(1-5) + 右,右 = 𠂇(6-7) + 口(8-9);部件边界处换气,故显著加长。
+    static let gapScale: [Double] = [1.0, 1.35, 0.9, 0.9, 2.4, 1.2, 1.9, 1.0]
+    static let gaps: [Double] = DraftingMotion.gapScale.map { $0 * DraftingMotion.strokeGap }
+    /// 笔杆倾角:基准 penAngle 之上叠加随行笔方向的偏转,并带时间滞后(跟随/重叠动作)。
+    /// 幅度刻意压小——大了就成了绕轴乱转的指南针,不像手握着的笔。
+    static let leanMax = 15.0 * Double.pi / 180
+    static let leanLag = 0.055      // 滞后窗口(占书写段比例)
+
+    /// 时间片:等时性 + 分级停顿
     static let spans: [(Double, Double)] = {
         let paths = DraftingMotion.layers
-        let gap = DraftingMotion.strokeGap
-        let totalLen = paths.reduce(CGFloat(0)) { $0 + $1.median.total }
-        let gaps = Double(paths.count - 1) * gap
+        let w = paths.map { pow(Double($0.median.total), DraftingMotion.isochronyAlpha) }
+        let sumW = w.reduce(0, +)
+        let sumGap = DraftingMotion.gaps.reduce(0, +)
         var spans: [(Double, Double)] = []
         var t = 0.0
-        for m in paths {
-            let share = (1 - gaps) * Double(m.median.total / totalLen)
+        for i in 0..<paths.count {
+            let share = (1 - sumGap) * (w[i] / sumW)
             spans.append((t, t + share))
-            t += share + gap
+            t += share + (i < DraftingMotion.gaps.count ? DraftingMotion.gaps[i] : 0)
         }
         return spans
     }()
@@ -198,7 +283,7 @@ enum DraftingMotion {
     static let liftDrift: CGFloat = 0.016    // 收笔沿出锋方向的顺势带出
     /// 行笔速度曲线。峰值 1.72× 均速、起速 46%、收速 26%——加减速读得出但不甩鞭。
     /// 试过 Material (.40,0,.20,1),峰值 2.73× 且两端归零,配上静止段反而更顿挫。
-    static let travelBezier: (Double, Double, Double, Double) = (0.40, 0.18, 0.40, 0.85)
+    static let travelBezier: (Double, Double, Double, Double) = (0.45, 0.30, 0.45, 0.75)
 
     private static func bezAxis(_ t: Double, _ a: Double, _ b: Double) -> Double {
         let m = 1 - t
@@ -239,7 +324,32 @@ enum DraftingMotion {
             let s = CGFloat(MotionEase.smoothstep(q))
             return Rhythm(prog: 1, lift: liftHeight * s, drift: liftDrift * s)
         }
-        return Rhythm(prog: travelEase((u - downFrac) / (1 - downFrac - upFrac)), lift: 0, drift: 0)
+        // 行笔:先过整笔的加减速曲线,再经曲率时间扭曲映射到弧长(拐角自动放慢)
+        let tt = travelEase((u - downFrac) / (1 - downFrac - upFrac))
+        return Rhythm(prog: warpAt(layers[i].warp, tt), lift: 0, drift: 0)
+    }
+
+    /// 笔杆倾靠:目标角由行笔方向决定(以右下 45° 为中性),再对过去一小段窗口做
+    /// 指数加权平均形成滞后——动画十二原则里的跟随/重叠动作:附属部件(笔杆)的
+    /// 转向要慢于主体(笔尖)。draw 是相位的纯函数,不能用有状态的滤波器,故就地积分。
+    static func penLeanAt(_ wp: Double) -> Double {
+        let k = 5
+        let d = 0.0016
+        var num = 0.0
+        var den = 0.0
+        for i in 0..<k {
+            let frac = Double(i) / Double(k - 1)
+            let w = max(0, wp - leanLag * frac)
+            let a = tipAt(max(0, w - d))
+            let b = tipAt(min(1, w + d))
+            let dx = Double(b.x - a.x)
+            let dy = Double(b.y - a.y)
+            let target = hypot(dx, dy) < 1e-7 ? 0 : leanMax * sin(atan2(dy, dx) - Double.pi / 4)
+            let g = exp(-2.2 * frac)
+            num += target * g
+            den += g
+        }
+        return num / den
     }
 
     /// 单笔内的笔尖位置(含离纸高度与出锋带出)
@@ -315,6 +425,8 @@ enum DraftingMotion {
 
     struct TipState {
         let pos: CGPoint
+        /// 笔杆相对基准倾角的偏转(弧度)
+        let lean: Double
     }
 
     /// 书写进度 wp∈[0,1] → 笔尖(笔画内含落笔/收笔;笔画间飞渡小弧)
@@ -341,16 +453,21 @@ enum DraftingMotion {
         return strokePenPos(layers.count - 1, 1)
     }
 
-    /// 全局相位 → 笔尖位置。写 → 悬 → 回笔 → 蓄势 → 写……全程连续,固定倾角纯平移。
+    /// 全局相位 → 笔尖位置与笔杆倾靠。写 → 悬 → 回笔 → 蓄势 → 写……全程连续。
     static func penState(_ p: Double) -> TipState {
         let startPos = layers[0].median.point(at: 0)
         let endPos = layers[layers.count - 1].median.point(at: 1)
         if p >= writeSpan.t0, p < writeSpan.t1 {
-            return TipState(pos: tipAt((p - writeSpan.t0) / (writeSpan.t1 - writeSpan.t0)))
+            let wp = (p - writeSpan.t0) / (writeSpan.t1 - writeSpan.t0)
+            return TipState(pos: tipAt(wp), lean: penLeanAt(wp))
         }
         if p >= writeSpan.t1, p < hoverEnd {
             let q = (p - writeSpan.t1) / (hoverEnd - writeSpan.t1)
-            return TipState(pos: CGPoint(x: endPos.x, y: endPos.y - CGFloat(hoverBob * sin(2 * .pi * q))))
+            // 悬笔端详:倾靠缓缓回正,不要一撒手就弹直
+            return TipState(
+                pos: CGPoint(x: endPos.x, y: endPos.y - CGFloat(hoverBob * sin(2 * .pi * q))),
+                lean: penLeanAt(1) * (1 - MotionEase.smoothstep(q))
+            )
         }
         var q = 1.0
         if p >= returnSpan.t0, p < returnSpan.t1 {
@@ -360,13 +477,13 @@ enum DraftingMotion {
             let poiseLen = 1 - returnSpan.t1 + writeSpan.t0
             let q2 = p >= returnSpan.t1 ? (p - returnSpan.t1) / poiseLen : (p + 1 - returnSpan.t1) / poiseLen
             let bob = 0.004 + hoverBob * 0.6 * sin(.pi * MotionEase.clamp01(q2))
-            return TipState(pos: CGPoint(x: startPos.x, y: startPos.y - CGFloat(bob)))
+            return TipState(pos: CGPoint(x: startPos.x, y: startPos.y - CGFloat(bob)), lean: 0)
         }
         let s = MotionEase.smoothstep(q)
         return TipState(pos: CGPoint(
             x: endPos.x + (startPos.x - endPos.x) * CGFloat(s),
             y: endPos.y + (startPos.y - endPos.y) * CGFloat(s) - CGFloat(hopLift * sin(.pi * q))
-        ))
+        ), lean: 0)
     }
 
     static func drawPen(_ context: inout GraphicsContext, size: CGFloat, phase: Double, dark: Bool) {
@@ -376,7 +493,7 @@ enum DraftingMotion {
 
         var pctx = context
         pctx.translateBy(x: st.pos.x * size, y: st.pos.y * size)
-        pctx.rotate(by: .radians(penAngle))     // 固定倾角
+        pctx.rotate(by: .radians(penAngle + st.lean))   // 基准倾角 + 随行笔方向的滞后倾靠
         pctx.scaleBy(x: s, y: s)
         pctx.translateBy(x: -penTip.x, y: -penTip.y)
 
@@ -404,7 +521,7 @@ enum DraftingMotion {
     static let spec = MotionSpec(
         id: "thinking-drafting-you",
         title: "Thinking|起草",
-        subtitle: "4.4s · 钢笔写「祐」 · 九层分笔 · 36 pt 起",
+        subtitle: "11s · 钢笔写「祐」 · 曲率控速 · 36 pt 起",
         cycle: cycle,
         previewSizes: [36, 44, 56]
     ) { context, size, phase, dark in
