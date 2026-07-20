@@ -11,17 +11,25 @@ struct MotionSpec: Identifiable {
     let subtitle: String
     /// 一轮总时长(秒,含呼吸停顿)
     let cycle: Double
+    /// 展板实寸档位。默认 20/24/28 pt(状态文字旁的小图标位)。
+    /// 笔画密集的字形动画在小尺寸下并笔,需单独指定更大档位——实测见 DraftingMotion。
+    var previewSizes: [CGFloat] = [20, 24, 28]
     let draw: (_ context: inout GraphicsContext, _ size: CGFloat, _ phase: Double, _ dark: Bool) -> Void
 }
 
-// MARK: - Thinking|起草 v6:用户九层分笔素材
+// MARK: - Thinking|起草 v7:轨迹由位图骨架反推
 
 /// 墨迹成品 = 用户 PSD 分层的 9 笔位图(design-refs/you_oracle_fixed_canvas_package,
 /// 画布 1052×1252,层号即笔顺,GlyphStrokes/*.png 打包为资源)。
 /// 每层蒙版只揭示本层(零渗漏);字形按九层联合墨盒 (165,151,723,1024) 居中填满 glyphBox。
 /// 位图以 destinationIn 混合染成墨色,适配纸/深双底。
 /// 钢笔 = 用户 SVG,线宽 ×penWeight 加粗、整体放大,固定倾角 38° 纯平移。
-/// 常量与草样(motion-sketch.html v6)1:1。
+///
+/// v7 修复(用户 2026-07-19 反馈第 6 笔断裂):v6 的 median 是照字形结构手写的,从未与位图配准。
+/// 第 6 笔轨迹反向且横穿「反C」空腔,蒙版扫过空腔无墨可揭 → 一笔裂成两段,末了靠时间片结束跳补;
+/// 早现的那截孤墨其实是它自己的下横(恰在第 7 笔起始横段的高度上,故被误读为第 7 笔提前显现)。
+/// 现改为从位图 alpha 反推中心线(见 layerDefs),配准误差归零,蒙版宽也随之收紧近半。
+/// 常量与草样(motion-sketch.html v7)1:1。
 enum DraftingMotion {
     static let cycle = 4.4
 
@@ -42,29 +50,81 @@ enum DraftingMotion {
     }
 
     /// 定义:画布放置 (x,y,w,h) + 轨迹(联合盒归一化坐标)+ 蒙版宽。层序即笔顺。
+    ///
+    /// v7:轨迹不再手写,由各层位图 alpha 反推——Zhang-Suen 细化取骨架,取最大连通分量的
+    /// 图直径(双向 BFS)作中心线,按弧长重采样;首末沿切向各外延 0.8×笔半径,使圆头蒙版
+    /// 罩住铺毫的笔尖。蒙版宽 = 2×笔半径(距离变换 85 分位)×1.4375,不再是拍脑袋的定值。
+    /// 定向:长宽比 >2 的横画从左起,<0.5 的竖画从上起,复合形先按 y 后按 x 取起点。
+    /// 实测各笔走完蒙版后的漏墨率 ≤0.18%(旧手写轨迹的 06 因穿过「反C」空腔而断笔)。
     static let layerDefs: [(n: String, x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat, median: [CGPoint], maskW: CGFloat)] = [
+        // 01 上横
         ("01", 204, 151, 242, 72,
-         [CGPoint(x: 0.062, y: 0.040), CGPoint(x: 0.20, y: 0.030), CGPoint(x: 0.378, y: 0.035)], 0.075),
+         [
+          CGPoint(x: 0.0502, y: 0.0403), CGPoint(x: 0.1184, y: 0.0326), CGPoint(x: 0.1552, y: 0.0391),
+          CGPoint(x: 0.1974, y: 0.0391), CGPoint(x: 0.2385, y: 0.0371), CGPoint(x: 0.2795, y: 0.0352),
+          CGPoint(x: 0.3206, y: 0.0332), CGPoint(x: 0.3866, y: 0.0436)
+         ], 0.0453),
+        // 02 下横
         ("02", 178, 274, 310, 60,
-         [CGPoint(x: 0.025, y: 0.150), CGPoint(x: 0.23, y: 0.143), CGPoint(x: 0.442, y: 0.147)], 0.072),
+         [
+          CGPoint(x: 0.0078, y: 0.1593), CGPoint(x: 0.0814, y: 0.1533), CGPoint(x: 0.1291, y: 0.1523),
+          CGPoint(x: 0.1784, y: 0.1504), CGPoint(x: 0.229, y: 0.1504), CGPoint(x: 0.2783, y: 0.1484),
+          CGPoint(x: 0.3271, y: 0.1455), CGPoint(x: 0.3756, y: 0.144), CGPoint(x: 0.4473, y: 0.1448)
+         ], 0.04),
+        // 03 中竖
         ("03", 301, 307, 72, 805,
-         [CGPoint(x: 0.230, y: 0.162), CGPoint(x: 0.242, y: 0.55), CGPoint(x: 0.236, y: 0.930)], 0.078),
+         [
+          CGPoint(x: 0.2782, y: 0.1475), CGPoint(x: 0.2407, y: 0.2359), CGPoint(x: 0.2379, y: 0.3122),
+          CGPoint(x: 0.2407, y: 0.3877), CGPoint(x: 0.2324, y: 0.4624), CGPoint(x: 0.2324, y: 0.5396),
+          CGPoint(x: 0.2268, y: 0.6151), CGPoint(x: 0.2268, y: 0.6881), CGPoint(x: 0.2227, y: 0.764),
+          CGPoint(x: 0.2227, y: 0.8403), CGPoint(x: 0.2153, y: 0.9404)
+         ], 0.04),
+        // 04 左竖
         ("04", 165, 385, 90, 565,
-         [CGPoint(x: 0.078, y: 0.235), CGPoint(x: 0.048, y: 0.50), CGPoint(x: 0.060, y: 0.772)], 0.075),
+         [
+          CGPoint(x: 0.0803, y: 0.2389), CGPoint(x: 0.0761, y: 0.3189), CGPoint(x: 0.0733, y: 0.3702),
+          CGPoint(x: 0.083, y: 0.4195), CGPoint(x: 0.0788, y: 0.4696), CGPoint(x: 0.0678, y: 0.5185),
+          CGPoint(x: 0.0705, y: 0.5682), CGPoint(x: 0.0609, y: 0.6175), CGPoint(x: 0.0539, y: 0.6676),
+          CGPoint(x: 0.0429, y: 0.7165), CGPoint(x: -0.009, y: 0.7696)
+         ], 0.0453),
+        // 05 右竖
         ("05", 429, 368, 51, 582,
-         [CGPoint(x: 0.398, y: 0.218), CGPoint(x: 0.406, y: 0.50), CGPoint(x: 0.400, y: 0.772)], 0.065),
+         [
+          CGPoint(x: 0.3997, y: 0.2176), CGPoint(x: 0.39, y: 0.2884), CGPoint(x: 0.39, y: 0.3424),
+          CGPoint(x: 0.39, y: 0.3963), CGPoint(x: 0.39, y: 0.4503), CGPoint(x: 0.39, y: 0.5042),
+          CGPoint(x: 0.39, y: 0.5582), CGPoint(x: 0.3942, y: 0.6109), CGPoint(x: 0.397, y: 0.6616),
+          CGPoint(x: 0.4025, y: 0.7139), CGPoint(x: 0.4179, y: 0.7841)
+         ], 0.0313),
+        // 06 横折(反C):左上起笔 → 向右 → 右侧下弯 → 沿下横向左回勾
         ("06", 527, 176, 361, 311,
-         [CGPoint(x: 0.607, y: 0.261), CGPoint(x: 0.648, y: 0.115), CGPoint(x: 0.80, y: 0.038),
-          CGPoint(x: 0.94, y: 0.068), CGPoint(x: 0.995, y: 0.185)], 0.085),
+         [
+          CGPoint(x: 0.5311, y: 0.049), CGPoint(x: 0.666, y: 0.0479), CGPoint(x: 0.7703, y: 0.0557),
+          CGPoint(x: 0.8718, y: 0.0684), CGPoint(x: 0.946, y: 0.1152), CGPoint(x: 0.9599, y: 0.188),
+          CGPoint(x: 0.9115, y: 0.2507), CGPoint(x: 0.8297, y: 0.2939), CGPoint(x: 0.7271, y: 0.3027),
+          CGPoint(x: 0.6199, y: 0.3037), CGPoint(x: 0.4898, y: 0.2901)
+         ], 0.0435),
+        // 07 长竖钩
         ("07", 544, 291, 340, 884,
-         [CGPoint(x: 0.63, y: 0.165), CGPoint(x: 0.82, y: 0.20), CGPoint(x: 0.945, y: 0.30),
-          CGPoint(x: 0.965, y: 0.60), CGPoint(x: 0.92, y: 0.985)], 0.075),
+         [
+          CGPoint(x: 0.5252, y: 0.1543), CGPoint(x: 0.6907, y: 0.1699), CGPoint(x: 0.8166, y: 0.1976),
+          CGPoint(x: 0.8935, y: 0.2732), CGPoint(x: 0.9046, y: 0.3703), CGPoint(x: 0.9073, y: 0.4682),
+          CGPoint(x: 0.9142, y: 0.5666), CGPoint(x: 0.9198, y: 0.6637), CGPoint(x: 0.9198, y: 0.764),
+          CGPoint(x: 0.9295, y: 0.8615), CGPoint(x: 0.9514, y: 0.9875)
+         ], 0.0488),
+        // 08 匣:实为 U 形开口向上,非闭合方框
         ("08", 540, 534, 216, 344,
-         [CGPoint(x: 0.545, y: 0.400), CGPoint(x: 0.70, y: 0.385), CGPoint(x: 0.800, y: 0.405),
-          CGPoint(x: 0.812, y: 0.545), CGPoint(x: 0.790, y: 0.690), CGPoint(x: 0.63, y: 0.705),
-          CGPoint(x: 0.532, y: 0.68), CGPoint(x: 0.522, y: 0.52), CGPoint(x: 0.540, y: 0.415)], 0.085),
+         [
+          CGPoint(x: 0.5624, y: 0.3778), CGPoint(x: 0.5546, y: 0.4704), CGPoint(x: 0.5574, y: 0.5381),
+          CGPoint(x: 0.5615, y: 0.6054), CGPoint(x: 0.5836, y: 0.6669), CGPoint(x: 0.6714, y: 0.6826),
+          CGPoint(x: 0.7531, y: 0.6606), CGPoint(x: 0.7718, y: 0.5976), CGPoint(x: 0.7759, y: 0.5303),
+          CGPoint(x: 0.7759, y: 0.4626), CGPoint(x: 0.7682, y: 0.37)
+         ], 0.0417),
+        // 09 匣内横
         ("09", 575, 656, 148, 61,
-         [CGPoint(x: 0.572, y: 0.525), CGPoint(x: 0.67, y: 0.516), CGPoint(x: 0.765, y: 0.522)], 0.068),
+         [
+          CGPoint(x: 0.5516, y: 0.5679), CGPoint(x: 0.5969, y: 0.5278), CGPoint(x: 0.641, y: 0.5244),
+          CGPoint(x: 0.687, y: 0.5244), CGPoint(x: 0.7301, y: 0.5215), CGPoint(x: 0.7943, y: 0.5339)
+         ], 0.0383),
     ]
 
     static let layers: [Layer] = {
@@ -267,11 +327,15 @@ enum DraftingMotion {
         }
     }
 
+    /// 尺寸档位:实测(接触表 dpr-study,按 @1x/@2x/@3x 设备像素渲染)——
+    /// 「祐」九笔密集,20 pt 三竖粘连、24–28 pt 临界并笔,36 pt 起笔笔分明。
+    /// 故起草不进 20–28 pt 的小图标位,单列 36/44/56 pt(用户 2026-07-20 拍板)。
     static let spec = MotionSpec(
         id: "thinking-drafting-you",
         title: "Thinking|起草",
-        subtitle: "4.4s · 钢笔写「祐」 · 九层分笔 · 纯墨",
-        cycle: cycle
+        subtitle: "4.4s · 钢笔写「祐」 · 九层分笔 · 36 pt 起",
+        cycle: cycle,
+        previewSizes: [36, 44, 56]
     ) { context, size, phase, dark in
         let m = DraftingMotion.self
         let ink = MotionPalette.stroke(dark: dark)

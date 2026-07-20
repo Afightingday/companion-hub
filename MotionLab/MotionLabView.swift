@@ -57,8 +57,6 @@ struct MotionCell: View {
 struct MotionLabView: View {
     @StateObject private var clock = MotionClock()
 
-    private let trueSizes: [CGFloat] = [20, 24, 28]
-
     var body: some View {
         ZStack {
             MotionPalette.paperBg.ignoresSafeArea()
@@ -69,7 +67,7 @@ struct MotionLabView: View {
                     card(for: spec)
                 }
                 controls
-                Text("20/24/28 pt 实寸 · 纸/深双底 · 放大格按 24 pt 观感等比")
+                Text("各枚按自身档位实寸 · 工具 20/24/28 pt · 起草 36/44/56 pt · 纸/深双底")
                     .font(.system(size: 10))
                     .foregroundStyle(MotionPalette.inkMuted)
                 Spacer(minLength: 0)
@@ -84,7 +82,7 @@ struct MotionLabView: View {
             Text("雨施流形 · Motion Lab")
                 .font(.system(size: 16, weight: .semibold, design: .serif))
                 .foregroundStyle(MotionPalette.ink)
-            Text("首批原型 · v6(九层分笔 · 居中 · 粗笔)")
+            Text("首批原型 · v7(轨迹由位图骨架反推 · 起草改走大尺寸)")
                 .font(.system(size: 11))
                 .foregroundStyle(MotionPalette.inkMuted)
         }
@@ -134,7 +132,7 @@ struct MotionLabView: View {
                 .foregroundStyle(dark ? MotionPalette.inkMutedOnDark : MotionPalette.inkMuted)
                 .frame(width: 26, alignment: .leading)
 
-            ForEach(trueSizes, id: \.self) { size in
+            ForEach(spec.previewSizes, id: \.self) { size in
                 VStack(spacing: 2) {
                     MotionCell(spec: spec, size: size, dark: dark, clock: clock)
                     Text("\(Int(size))")
