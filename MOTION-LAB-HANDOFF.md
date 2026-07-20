@@ -151,9 +151,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\apps\ios\sync-to-public.ps
 
 在私仓 `codex/line-animation-study` 分支继续，先阅读本文件，再编辑 `apps/ios/MotionLab/`。不要重新创建 Target、同步脚本或录制 workflow，也不要一次性制作全部九个动画。
 
-迭代流程已验证：先在会话 scratchpad 的 HTML 草样（canvas，数学与 Swift 1:1）逐帧调轨迹，锁常量后移植 `MotionLab/Motion/`，再经 CI 出 MP4 给用户评审。移植后**用脚本逐点比对 Swift 与草样常量**，不要靠肉眼。
+迭代流程已验证：先在 HTML 草样（canvas，数学与 Swift 1:1）逐帧调轨迹，锁常量后移植 `MotionLab/Motion/`，再经 CI 出 MP4 给用户评审。
 
-**草样版本号会漂**：2026-07-20 排查时页面标题写着 v4、代码其实已是 v6 架构，害得先按 v5 的整字共享蒙版去解释串墨（推理自洽但错）。改版时 `<title>` / `<h1>` / 分节注释三处要一起改。**遇到「代码逻辑说这不可能」的矛盾，别编解释，直接跑接触表看。**
+草样已入库（私仓 `tools/motion-sketch/`，非镜像范围，改它不会触发公仓 CI）：
+
+```bash
+node tools/motion-sketch/serve.mjs        # 打样,127.0.0.1:4173
+node tools/motion-sketch/check-parity.mjs # 校验九层常量与 Swift 逐值一致
+```
+
+它直接引用 `design-refs/you_oracle_fixed_canvas_package/` 的素材原件，不存副本。移植后**跑 check-parity 比对，不要靠肉眼**。
+
+**草样版本号会漂**：入库前它躺在会话 scratchpad 里，2026-07-20 排查时页面标题写着 v4、代码其实已是 v6 架构，害得先按 v5 的整字共享蒙版去解释串墨（推理自洽但错）。改版时 `<title>` / `<h1>` / 分节注释三处要一起改。**遇到「代码逻辑说这不可能」的矛盾，别编解释，直接跑接触表看。**
 
 2026-07-20 进度：`Thinking｜起草` 到 v7（见 §4，第 6 笔断裂已修，轨迹改为位图反推），并按用户拍板改走 36–56 pt 大尺寸（见 §3.1）。`搜索｜拾音` 仍为 v4，未动。等待 v7 出片反馈，定稿后按同流程扩展其余七枚。
 
