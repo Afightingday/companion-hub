@@ -17,7 +17,7 @@ struct MotionSpec: Identifiable {
     let draw: (_ context: inout GraphicsContext, _ size: CGFloat, _ phase: Double, _ dark: Bool) -> Void
 }
 
-// MARK: - Thinking|起草 v7:轨迹由位图骨架反推
+// MARK: - Thinking|起草 v8:骨架反推轨迹 + 版面重定 + 书写节奏
 
 /// 墨迹成品 = 用户 PSD 分层的 9 笔位图(design-refs/you_oracle_fixed_canvas_package,
 /// 画布 1052×1252,层号即笔顺,GlyphStrokes/*.png 打包为资源)。
@@ -29,15 +29,18 @@ struct MotionSpec: Identifiable {
 /// 第 6 笔轨迹反向且横穿「反C」空腔,蒙版扫过空腔无墨可揭 → 一笔裂成两段,末了靠时间片结束跳补;
 /// 早现的那截孤墨其实是它自己的下横(恰在第 7 笔起始横段的高度上,故被误读为第 7 笔提前显现)。
 /// 现改为从位图 alpha 反推中心线(见 layerDefs),配准误差归零,蒙版宽也随之收紧近半。
-/// 常量与草样(motion-sketch.html v7)1:1。
+/// 常量与草样(motion-sketch.html v8)1:1。
 enum DraftingMotion {
     static let cycle = 4.4
 
     // ---- 字形 ----
     /// 九层联合墨盒(画布像素)
     static let union = CGRect(x: 165, y: 151, width: 723, height: 1024)
-    /// 0.62×(723/1024)=0.438,按联合盒居中填满
-    static let glyphBox = CGRect(x: 0.176, y: 0.19, width: 0.438, height: 0.62)
+    /// v8 版面(tools/motion-sketch/measure-glyph.mjs 实测推导):字高 0.80,宽 0.80×723/1024=0.5648。
+    /// 水平按**墨重心**(union 内 0.5298)居中——右侧「右」比左侧「礻」重 19.8%,纯外框居中会显得偏右,
+    /// 故据此左移 0.0168;垂直按外接框居中(竖直重心偏上 0.4249,若也按重心校正会把字压到底边)。
+    /// 旧值 (0.176, 0.19, 0.438, 0.62) 左留白 0.176 / 右 0.386,字形整整偏左 10.5% 容器宽(用户指出)。
+    static let glyphBox = CGRect(x: 0.2008, y: 0.10, width: 0.5648, height: 0.80)
 
     struct Layer {
         let name: String
@@ -187,6 +190,74 @@ enum DraftingMotion {
     static let hopLift = 0.12
     static let hoverBob = 0.007
 
+    // ---- v8 书写节奏:落笔 → 行笔 → 收笔。占比按本笔时间片计 ----
+    static let downFrac = 0.08           // 落笔:墨不动,笔从 landHeight 降到纸面
+    static let upFrac = 0.10             // 收笔:墨已满,笔提起离纸
+    static let landHeight: CGFloat = 0.024   // 落笔起始高度(单位空间;随 v8 字形放大同步上调)
+    static let liftHeight: CGFloat = 0.032   // 收笔抬起高度
+    static let liftDrift: CGFloat = 0.016    // 收笔沿出锋方向的顺势带出
+    /// 行笔速度曲线。峰值 1.72× 均速、起速 46%、收速 26%——加减速读得出但不甩鞭。
+    /// 试过 Material (.40,0,.20,1),峰值 2.73× 且两端归零,配上静止段反而更顿挫。
+    static let travelBezier: (Double, Double, Double, Double) = (0.40, 0.18, 0.40, 0.85)
+
+    private static func bezAxis(_ t: Double, _ a: Double, _ b: Double) -> Double {
+        let m = 1 - t
+        return 3 * m * m * t * a + 3 * m * t * t * b + t * t * t
+    }
+
+    /// 三次贝塞尔缓动:x→t 用二分(24 次即到浮点精度,且无牛顿迭代的收敛风险)
+    static func travelEase(_ x: Double) -> Double {
+        if x <= 0 { return 0 }
+        if x >= 1 { return 1 }
+        let (x1, y1, x2, y2) = travelBezier
+        var lo = 0.0
+        var hi = 1.0
+        for _ in 0..<24 {
+            let t = (lo + hi) / 2
+            if bezAxis(t, x1, x2) < x { lo = t } else { hi = t }
+        }
+        return bezAxis((lo + hi) / 2, y1, y2)
+    }
+
+    struct Rhythm {
+        let prog: Double
+        let lift: CGFloat
+        let drift: CGFloat
+    }
+
+    /// 单笔节奏:落笔(墨不动,笔降到纸面) → 行笔(墨随缓动推进) → 收笔(墨已满,笔提起带出)。
+    /// prog 同时驱动蒙版揭示与笔位,两者必须同源——各算各的,笔就会脱离墨的前沿。
+    static func strokeRhythm(_ i: Int, _ wp: Double) -> Rhythm {
+        let (t0, t1) = spans[i]
+        let u = MotionEase.clamp01((wp - t0) / (t1 - t0))
+        if u < downFrac {
+            let q = u / downFrac
+            return Rhythm(prog: 0, lift: landHeight * CGFloat(1 - MotionEase.smoothstep(q)), drift: 0)
+        }
+        if u > 1 - upFrac {
+            let q = (u - (1 - upFrac)) / upFrac
+            let s = CGFloat(MotionEase.smoothstep(q))
+            return Rhythm(prog: 1, lift: liftHeight * s, drift: liftDrift * s)
+        }
+        return Rhythm(prog: travelEase((u - downFrac) / (1 - downFrac - upFrac)), lift: 0, drift: 0)
+    }
+
+    /// 单笔内的笔尖位置(含离纸高度与出锋带出)
+    static func strokePenPos(_ i: Int, _ wp: Double) -> CGPoint {
+        let r = strokeRhythm(i, wp)
+        let path = layers[i].median
+        var p = path.point(at: r.prog)
+        if r.drift > 0 {
+            let a = path.point(at: 0.96)
+            let b = path.point(at: 1)
+            let dx = b.x - a.x
+            let dy = b.y - a.y
+            let len = max(hypot(dx, dy), 1e-6)
+            p = CGPoint(x: p.x + dx / len * r.drift, y: p.y + dy / len * r.drift)
+        }
+        return CGPoint(x: p.x, y: p.y - r.lift)
+    }
+
     /// 用户钢笔 SVG(256 空间),w = 原始 stroke-width。主体:笔身胶囊 + 握位四线 + 笔尖 V
     static let penMain: [(path: Path, w: CGFloat)] = {
         var body = Path()
@@ -246,27 +317,28 @@ enum DraftingMotion {
         let pos: CGPoint
     }
 
-    /// 书写进度 wp∈[0,1] → 笔尖(轨迹内沿线;笔画间提笔小弧)
-    static func tipAt(_ wp: Double) -> (pos: CGPoint, lift: Double) {
+    /// 书写进度 wp∈[0,1] → 笔尖(笔画内含落笔/收笔;笔画间飞渡小弧)
+    static func tipAt(_ wp: Double) -> CGPoint {
         for i in 0..<layers.count {
             let (t0, t1) = spans[i]
             if wp <= t1 {
                 if wp >= t0 {
-                    return (layers[i].median.point(at: (wp - t0) / (t1 - t0)), 0)
+                    return strokePenPos(i, wp)
                 }
-                let prevEnd = layers[i - 1].median.point(at: 1)
-                let curStart = layers[i].median.point(at: 0)
+                // 飞渡:自上一笔的收笔位(已离纸)落到下一笔的落笔位(悬在 landHeight)
+                let prevEnd = strokePenPos(i - 1, spans[i - 1].1)
+                let s0 = layers[i].median.point(at: 0)
+                let curStart = CGPoint(x: s0.x, y: s0.y - landHeight)
                 let g0 = spans[i - 1].1
                 let q = (wp - g0) / (t0 - g0)
                 let s = MotionEase.smoothstep(q)
-                let pos = CGPoint(
+                return CGPoint(
                     x: prevEnd.x + (curStart.x - prevEnd.x) * CGFloat(s),
-                    y: prevEnd.y + (curStart.y - prevEnd.y) * CGFloat(s)
+                    y: prevEnd.y + (curStart.y - prevEnd.y) * CGFloat(s) - CGFloat(gapLift * sin(.pi * q))
                 )
-                return (pos, gapLift * sin(.pi * q))
             }
         }
-        return (layers[layers.count - 1].median.point(at: 1), 0)
+        return strokePenPos(layers.count - 1, 1)
     }
 
     /// 全局相位 → 笔尖位置。写 → 悬 → 回笔 → 蓄势 → 写……全程连续,固定倾角纯平移。
@@ -274,8 +346,7 @@ enum DraftingMotion {
         let startPos = layers[0].median.point(at: 0)
         let endPos = layers[layers.count - 1].median.point(at: 1)
         if p >= writeSpan.t0, p < writeSpan.t1 {
-            let t = tipAt((p - writeSpan.t0) / (writeSpan.t1 - writeSpan.t0))
-            return TipState(pos: CGPoint(x: t.pos.x, y: t.pos.y - CGFloat(t.lift)))
+            return TipState(pos: tipAt((p - writeSpan.t0) / (writeSpan.t1 - writeSpan.t0)))
         }
         if p >= writeSpan.t1, p < hoverEnd {
             let q = (p - writeSpan.t1) / (hoverEnd - writeSpan.t1)
@@ -370,8 +441,9 @@ enum DraftingMotion {
                 )
                 context.drawLayer { lctx in
                     if !done {
-                        // 活动层:蒙版只揭示本层(消散阶段所有层已写完,不与蒙版并存)
-                        let prog = (writeP - t0) / (t1 - t0)
+                        // 活动层:蒙版只揭示本层(消散阶段所有层已写完,不与蒙版并存)。
+                        // 进度与笔位同源(strokeRhythm),落笔段 prog=0 故此时无墨。
+                        let prog = m.strokeRhythm(i, writeP).prog
                         guard let pts = layer.median.slice(from: 0, to: prog), pts.count > 1 else { return }
                         var polyline = Path()
                         polyline.move(to: pts[0].scaled(by: size))

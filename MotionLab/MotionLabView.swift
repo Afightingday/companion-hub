@@ -82,7 +82,7 @@ struct MotionLabView: View {
             Text("雨施流形 · Motion Lab")
                 .font(.system(size: 16, weight: .semibold, design: .serif))
                 .foregroundStyle(MotionPalette.ink)
-            Text("首批原型 · v7(轨迹由位图骨架反推 · 起草改走大尺寸)")
+            Text("首批原型 · v8(字形放大居中 · 落笔—行笔—收笔)")
                 .font(.system(size: 11))
                 .foregroundStyle(MotionPalette.inkMuted)
         }
