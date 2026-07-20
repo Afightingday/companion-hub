@@ -142,7 +142,10 @@ jobs:
               if "Recording started" in message:
                   break
 
-          time.sleep(10)
+          # 录满一个完整循环还要有富余。起草 v9 的周期是 11.0s(用户定的 0.4× 速度),
+          # 原先固定录 10s,连一轮都跑不完。改 24s ≈ 两轮多。
+          # 起草周期若再变,这里要一起改。
+          time.sleep(24)
           recorder.send_signal(signal.SIGINT)
           try:
               recorder.wait(timeout=30)

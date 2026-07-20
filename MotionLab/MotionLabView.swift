@@ -53,7 +53,7 @@ struct MotionCell: View {
     }
 }
 
-/// 展板:首批原型评审用。启动即自动播放(CI 录制 10 秒无交互)。
+/// 展板:首批原型评审用。启动即自动播放(CI 录制 24 秒无交互,需覆盖起草 11s 周期)。
 struct MotionLabView: View {
     @StateObject private var clock = MotionClock()
 
