@@ -5,7 +5,8 @@ import YushiKit
 /// 1:1 移植 sandbox/youshi-home（2026-08-01 收官版）：
 /// 房间 v3 母版单张直出 + 定稿微调（饱和 0.88/明度 0.98）、
 /// 随机站位、拖拽摆放、未读三连跳 + 专属贴纸、撕拉拍立得速览卡、
-/// 纸鹤+航迹+Youyou logo 前景（DECO 定稿 JSON）、搜索纸签、墨水瓶羽毛笔。
+/// 纸鹤+航迹+Youyou logo 前景（DECO 定稿 JSON）、墨水瓶羽毛笔
+///（搜索纸签 1.8 退役，B2 改走系统搜索 tab）。
 /// 原生化差异：底栏走系统 TabView；掀膜走 .pageCurl（B6）；
 /// 视差由指针改陀螺仪（B5）；全局音效为 B12 首版。
 struct HomeSceneView: View {
@@ -40,8 +41,15 @@ struct HomeSceneView: View {
                 .frame(width: geo.size.width, height: geo.size.height)
         }
         .ignoresSafeArea()
-        // 底栏改自绘后，开卡收底栏走 AppModel 标记（系统 tabBar 已全局隐藏）
-        .onChange(of: openPet) { appModel.homeCardOpen = openPet != nil }
+        .toolbar(openPet != nil ? .hidden : .visible, for: .tabBar)
+        .onChange(of: appModel.pendingOpenPet) {
+            // 搜索页传令：开某只的速览卡（1.8 起原生搜索 tab 接管寻旧识）
+            if let key = appModel.pendingOpenPet {
+                appModel.pendingOpenPet = nil
+                openPet = key
+                SoundPlayer.shared.play(.cardOpen)
+            }
+        }
         .fullScreenCover(item: $chatPet, onDismiss: { Task { await refresh() } }) { key in
             let spec = PET_SPECS.first { $0.key == key } ?? PET_SPECS[0]
             ChatSheetView(spec: spec, contact: contacts[key]) { chatPet = nil }
@@ -126,13 +134,7 @@ struct HomeSceneView: View {
                 .blendMode(.softLight)
                 .allowsHitTesting(false)
 
-            // ── 手账外壳件 ──
-            ZStack(alignment: .bottomLeading) {
-                Color.clear
-                SearchNoteView(quiet: quiet)
-                    .padding(.leading, 14)
-                    .padding(.bottom, 122)
-            }
+            // ── 手账外壳件（搜索纸签 1.8 退役：改走系统搜索 tab）──
             ZStack(alignment: .topLeading) {
                 Color.clear
                 QuillWellView(quiet: quiet)

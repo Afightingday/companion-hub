@@ -1,144 +1,165 @@
 import SwiftUI
+import UIKit
+import YushiKit
 
 /// 五 tab 定稿（2026-08-01 祐祐）：云笺（会话首页）、游艺（Agent 互动、
 /// 小游戏）、食帖（记录美食）、留声（一起听音乐）、案头（个人设置与
-/// Agent 管理）。
-/// 底栏为自绘 YushiTabBar（同日二审拍板）：系统 Liquid Glass 托盘「发白」
-/// 被否，改玻璃胶囊形态 + 暖调微磨砂 + 设计稿手绘线条图标。
+/// Agent 管理）+ 系统搜索 tab（B2 第一步）。
+/// 底栏三审定稿（同日）：回归苹果原生 tab bar 保系统动画——1.7 的自绘
+/// 胶囊撤编；只把托盘调透压白。图标 = 设计稿手绘线条 PNG 双态：
+/// 选中原色、未选中灰化版（tools/tint-tabbar.ps1 生成，保笔触）。
 struct RootTabView: View {
     @Environment(AppModel.self) private var appModel
     @State private var selection = 0
+
+    init() {
+        // 托盘「有点发白」→ 透明底 + 超薄磨砂 + 一层极淡暖纱（0xF2EBDA @14%）。
+        // iOS 26 液态玻璃对 UITabBarAppearance 的吃法以真机为准，浓淡再调
+        let ap = UITabBarAppearance()
+        ap.configureWithTransparentBackground()
+        ap.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialLight)
+        ap.backgroundColor = UIColor(red: 0.949, green: 0.922, blue: 0.855, alpha: 0.14)
+        UITabBar.appearance().standardAppearance = ap
+        UITabBar.appearance().scrollEdgeAppearance = ap
+    }
 
     var body: some View {
         TabView(selection: $selection) {
             // 会话总览页（窗边手账工作室）取代微信式列表成为云笺首页；
             // 旧列表 YunjianView 保留在库里，B2 搜索重设计时再议去留
-            HomeSceneView()
-                .toolbar(.hidden, for: .tabBar)
-                .tag(0)
-            ComingSoonView(title: "游艺", subtitle: "和小家伙们的互动与小游戏 · 规划中", systemImage: "balloon")
-                .toolbar(.hidden, for: .tabBar)
-                .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 74) }
-                .tag(1)
-            ComingSoonView(title: "食帖", subtitle: "美食档案 · 后续批次搬进来", systemImage: "fork.knife")
-                .toolbar(.hidden, for: .tabBar)
-                .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 74) }
-                .tag(2)
-            ComingSoonView(title: "留声", subtitle: "一起听音乐 · 后续批次搬进来", systemImage: "music.note")
-                .toolbar(.hidden, for: .tabBar)
-                .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 74) }
-                .tag(3)
-            AntouView()
-                .toolbar(.hidden, for: .tabBar)
-                .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 74) }
-                .tag(4)
+            Tab(value: 0) {
+                HomeSceneView()
+            } label: {
+                Label { Text("云笺") } icon: { tabIcon("yunjian", tag: 0) }
+            }
+            Tab(value: 1) {
+                ComingSoonView(title: "游艺", subtitle: "和小家伙们的互动与小游戏 · 规划中", systemImage: "balloon")
+            } label: {
+                Label { Text("游艺") } icon: { tabIcon("youyi", tag: 1) }
+            }
+            Tab(value: 2) {
+                ComingSoonView(title: "食帖", subtitle: "美食档案 · 后续批次搬进来", systemImage: "fork.knife")
+            } label: {
+                Label { Text("食帖") } icon: { tabIcon("shitie", tag: 2) }
+            }
+            Tab(value: 3) {
+                ComingSoonView(title: "留声", subtitle: "一起听音乐 · 后续批次搬进来", systemImage: "music.note")
+            } label: {
+                Label { Text("留声") } icon: { tabIcon("liusheng", tag: 3) }
+            }
+            Tab(value: 4) {
+                AntouView()
+            } label: {
+                Label { Text("案头") } icon: { tabIcon("antou", tag: 4) }
+            }
+            // 原生搜索 tab：底栏右侧独立圆钮，点开自带键盘与全套系统动画
+            Tab(value: 5, role: .search) {
+                SearchTabView()
+            }
         }
-        .overlay(alignment: .bottom) {
-            YushiTabBar(selection: $selection)
-                .opacity(appModel.homeCardOpen ? 0 : 1)
-                .offset(y: appModel.homeCardOpen ? 26 : 0)
-                .animation(.sceneStandard(0.24), value: appModel.homeCardOpen)
-                .allowsHitTesting(!appModel.homeCardOpen)
-        }
+        .tint(SceneTokens.sage700)
         .onChange(of: selection) {
             SoundPlayer.shared.play(.tabTick) // B12：底栏切页一记笔触点
             Haptic.softTap()
         }
+        .onChange(of: appModel.pendingOpenPet) {
+            // 搜索页点了某只 → 跳回云笺，由场景消费 pendingOpenPet 开卡
+            if appModel.pendingOpenPet != nil { selection = 0 }
+        }
+    }
+
+    /// 双态图标：选中=原色原件，未选中=灰化版；31pt（三审「放大一点」）
+    private func tabIcon(_ name: String, tag: Int) -> Image {
+        let art = selection == tag ? "art/tabbar/\(name).png" : "art/tabbar/\(name)-off.png"
+        return Image(uiImage: SceneAsset.tabIcon(art, pt: 31))
     }
 }
 
-// MARK: - 自绘底栏（2026-08-01 二审定稿方向）
-// 形态 = iOS 时钟那种悬浮玻璃胶囊；材质 = 微微磨砂但不发白——
-// ultraThinMaterial 上罩一层暖奶油纱压掉系统材质的白气；
-// 图标 = 设计稿定稿手绘线条 PNG（原色渲染，保笔触浓淡）；
-// 选中 = 鼠尾草软泡随选择弹性滑移；点按 = 压扁回弹小反馈。
+// MARK: - 原生搜索 tab（B2 第一步：先把系统壳接上）
 
-private struct YushiTabItem {
-    let tag: Int
-    let title: String
-    let art: String
-}
+/// 结果 = 三只 pet 的名字/定位/最近一句本地过滤；点行回云笺开那只的速览卡。
+/// 展开搜索、键盘、取消、液态玻璃形态全部走系统。
+struct SearchTabView: View {
+    @Environment(AppModel.self) private var appModel
+    @State private var query = ""
+    @State private var contacts: [PetKey: ContactListItem] = [:]
 
-struct YushiTabBar: View {
-    @Binding var selection: Int
-    @Namespace private var ns
-    @State private var squashedTag: Int?
-
-    private static let items: [YushiTabItem] = [
-        YushiTabItem(tag: 0, title: "云笺", art: "art/tabbar/yunjian.png"),
-        YushiTabItem(tag: 1, title: "游艺", art: "art/tabbar/youyi.png"),
-        YushiTabItem(tag: 2, title: "食帖", art: "art/tabbar/shitie.png"),
-        YushiTabItem(tag: 3, title: "留声", art: "art/tabbar/liusheng.png"),
-        YushiTabItem(tag: 4, title: "案头", art: "art/tabbar/antou.png"),
-    ]
+    private var hits: [PetSpec] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return PET_SPECS }
+        return PET_SPECS.filter { spec in
+            let last = contacts[spec.key]?.lastMessage?.text ?? spec.previewFallback
+            return spec.name.lowercased().contains(q)
+                || spec.role.lowercased().contains(q)
+                || last.lowercased().contains(q)
+        }
+    }
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Self.items, id: \.tag) { item in
-                itemView(item)
+        NavigationStack {
+            List(hits) { spec in
+                Button {
+                    Haptic.softTap()
+                    appModel.pendingOpenPet = spec.key
+                } label: {
+                    row(spec)
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparatorTint(SceneTokens.cream500)
             }
-        }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 5)
-        .background {
-            ZStack {
-                Capsule(style: .continuous)
-                    .fill(.ultraThinMaterial)
-                // 暖奶油纱：只压白气，不盖掉磨砂的透景
-                Capsule(style: .continuous)
-                    .fill(Color(hex: 0xF2EBDA).opacity(0.42))
-                Capsule(style: .continuous)
-                    .strokeBorder(SceneTokens.cream500.opacity(0.85), lineWidth: 1)
-            }
-            .compositingGroup()
-            .shadow(color: SceneTokens.shadowInk.opacity(0.16), radius: 11, y: 6)
-            .shadow(color: SceneTokens.shadowInk.opacity(0.08), radius: 2.5, y: 1.5)
-        }
-        .padding(.horizontal, 13)
-        .padding(.bottom, 4)
-    }
-
-    private func itemView(_ item: YushiTabItem) -> some View {
-        let on = selection == item.tag
-        return Button {
-            guard selection != item.tag else { return }
-            withAnimation(.interpolatingSpring(stiffness: 330, damping: 27)) {
-                selection = item.tag
-            }
-            squashedTag = item.tag
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(0.32))
-                if squashedTag == item.tag { squashedTag = nil }
-            }
-        } label: {
-            VStack(spacing: 2.5) {
-                SceneAsset.image(item.art)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 31, height: 27)
-                    .scaleEffect(squashedTag == item.tag ? 0.84 : 1)
-                    .animation(.interpolatingSpring(stiffness: 400, damping: 13), value: squashedTag)
-                    .opacity(on ? 1 : 0.78)
-                Text(item.title)
-                    .font(SceneFont.note(11))
-                    .tracking(0.55)
-                    .foregroundStyle(on ? SceneTokens.ink800 : SceneTokens.ink500)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 7)
-            .padding(.bottom, 5.5)
-            .background {
-                if on {
-                    Capsule(style: .continuous)
-                        .fill(SceneTokens.sage300.opacity(0.5))
-                        .matchedGeometryEffect(id: "yushi.tab.bubble", in: ns)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(SceneTokens.paperPage.ignoresSafeArea())
+            .overlay {
+                if hits.isEmpty {
+                    ContentUnavailableView.search(text: query)
                 }
             }
-            .contentShape(Rectangle())
+            .navigationTitle("寻旧识")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, prompt: "寻旧识，拾旧话")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(item.title)
-        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+        .task { await load() }
+    }
+
+    private func row(_ spec: PetSpec) -> some View {
+        HStack(spacing: 12) {
+            SceneAsset.image(spec.art(.happy))
+                .resizable()
+                .scaledToFit()
+                .frame(width: 40, height: 46)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(spec.name)
+                    .font(SceneFont.note(17))
+                    .foregroundStyle(SceneTokens.ink800)
+                Text(contacts[spec.key]?.lastMessage?.text ?? spec.previewFallback)
+                    .font(.system(size: 13))
+                    .foregroundStyle(SceneTokens.ink400)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(time(spec))
+                .font(SceneFont.note(11))
+                .foregroundStyle(SceneTokens.ink300)
+        }
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
+    }
+
+    private func time(_ spec: PetSpec) -> String {
+        if let sentAt = contacts[spec.key]?.lastMessage?.sentAt {
+            let shown = PaperFormat.shortTime(sentAt)
+            if !shown.isEmpty { return shown }
+        }
+        return spec.timeFallback
+    }
+
+    @MainActor
+    private func load() async {
+        guard let client = appModel.client else { return }
+        if let items = try? await client.listContacts() {
+            contacts = PetContactMatch.map(items)
+        }
     }
 }
 

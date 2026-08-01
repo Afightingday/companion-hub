@@ -68,6 +68,26 @@ enum SceneAsset {
     }
 
     static func image(_ path: String) -> Image { Image(uiImage: uiImage(path)) }
+
+    /// 底栏图标：把 512² 手绘原件重采样到指定点尺寸（保纵横比、居中画布）。
+    /// 必须 .alwaysOriginal——系统 tab bar 默认按模板染色，会把线条画糊成剪影
+    static func tabIcon(_ path: String, pt: CGFloat) -> UIImage {
+        let key = "tab:\(path)@\(pt)"
+        if let hit = cache[key] { return hit }
+        let src = uiImage(path)
+        let size = CGSize(width: pt, height: pt)
+        let img = UIGraphicsImageRenderer(size: size).image { _ in
+            let sw = max(src.size.width, 1)
+            let sh = max(src.size.height, 1)
+            let s = min(size.width / sw, size.height / sh)
+            let w = sw * s
+            let h = sh * s
+            src.draw(in: CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h))
+        }
+        let out = img.withRenderingMode(.alwaysOriginal)
+        cache[key] = out
+        return out
+    }
 }
 
 // MARK: - 字体（LXGW WenKai Screen，--font-note / --font-hand 一体承担）
