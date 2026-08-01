@@ -5,7 +5,7 @@ import Observation
 /// B5：陀螺仪视差。Demo 用指针驱动 --par-x/--par-y ∈ [-1,1]，
 /// 真机改姿态驱动同一对系数：以进入页面时的握持姿态为零点，
 /// 左右倾（roll）→ parX、前后倾（pitch）→ parY，低通滤波去抖。
-/// 各层位移幅度沿用设计稿（±3…7pt），本就克制。
+/// 2026-08-01 真机反馈「太微小」：打满角收紧 + 各层幅度翻倍（±6…14pt）。
 @Observable
 final class MotionParallax {
     private(set) var parX: CGFloat = 0
@@ -14,8 +14,8 @@ final class MotionParallax {
     private let manager = CMMotionManager()
     private var reference: (roll: Double, pitch: Double)?
 
-    /// 倾到 ±0.42 rad（约 24°）打满，再往外夹住
-    private let fullTilt = 0.42
+    /// 倾到 ±0.30 rad（约 17°）打满，再往外夹住
+    private let fullTilt = 0.30
     /// 低通系数（30Hz 采样下 ~0.2s 收敛）
     private let smoothing: CGFloat = 0.16
 

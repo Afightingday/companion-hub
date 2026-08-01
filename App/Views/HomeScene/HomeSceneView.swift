@@ -67,14 +67,18 @@ struct HomeSceneView: View {
 
     private var canvas: some View {
         ZStack(alignment: .topLeading) {
-            // ── 房间母版单张直出（inset -28 视差余量），只染背景不动 pet ──
+            // ── 房间母版单张直出（±28 视差余量），只染背景不动 pet ──
+            // 余量层必须再套一层 440×956 frame 封住布局足迹：否则 ZStack 取
+            // 子视图联合尺寸被撑到 496×1012，整景居中裁切左上偏 28pt
+            //（2026-08-01 真机实证：搜索钮切半、墨水瓶偏中央、四边出血）
             SceneAsset.image("assets/room-master.png")
                 .resizable()
                 .scaledToFill()
                 .frame(width: SceneTokens.designW + 56, height: SceneTokens.designH + 56)
                 .saturation(0.88)
                 .colorMultiply(Color(white: 0.98))
-                .offset(x: -28 + parallax.parX * -3, y: -28 + parallax.parY * -2)
+                .offset(x: parallax.parX * -6, y: parallax.parY * -4)
+                .frame(width: SceneTokens.designW, height: SceneTokens.designH)
                 .allowsHitTesting(false)
 
             // ── mid：主人的 Youyou 手写 logo（DECO 定稿：22/87/123）──
@@ -82,7 +86,7 @@ struct HomeSceneView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 123)
-                .offset(x: 22 + parallax.parX * -7, y: 87 + parallax.parY * -5)
+                .offset(x: 22 + parallax.parX * -14, y: 87 + parallax.parY * -10)
                 .allowsHitTesting(false)
 
             // ── pets：上远下近，拖拽中的压最上 ──
@@ -186,7 +190,7 @@ struct HomeSceneView: View {
                     .offset(x: 66, y: -4 * float)
             }
             .frame(width: SceneTokens.designW, height: SceneTokens.designH, alignment: .bottomLeading)
-            .offset(x: parallax.parX * 5, y: parallax.parY * 4)
+            .offset(x: parallax.parX * 10, y: parallax.parY * 8)
         }
     }
 

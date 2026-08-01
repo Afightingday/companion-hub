@@ -56,16 +56,27 @@ struct QuickCardOverlay: View {
     }
 
     private var cardBody: some View {
-        ZStack(alignment: .topLeading) {
+        let ins = spec.coverInsets
+        return ZStack(alignment: .topLeading) {
             SceneAsset.image(spec.cardArt)
                 .resizable()
                 .frame(width: Self.cardW, height: Self.artH)
+                // 图层卡容器裸装：投影跟底卡 alpha 走（drop-shadow 0 14 30 / 0 4 9 对位）。
+                // 投影不能包住 UIKit 翻页子树——SwiftUI 会按整块矩形描影，
+                // 真机上就是卡后那团错位灰影（2026-08-01 实证）
+                .shadow(color: SceneTokens.shadowInk.opacity(0.22), radius: 15, y: 14)
+                .shadow(color: SceneTokens.shadowInk.opacity(0.12), radius: 4.5, y: 4)
 
             if !gone {
+                // 翻页容器 = 膜的实测可见框（整卡内衬 insets），
+                // 卷走的就是「真实大小的膜」，不带隐形透明边
                 CoverCurlView(
                     coverPath: spec.coverArt,
+                    cardPath: spec.cardArt,
                     preview: preview,
                     time: time,
+                    cardSize: CGSize(width: Self.cardW, height: Self.artH),
+                    insets: ins,
                     onCurlStart: { SoundPlayer.shared.play(.filmCurl) },
                     onCancelled: { SoundPlayer.shared.play(.filmCurl, volume: 0.5) },
                     onDone: {
@@ -73,12 +84,11 @@ struct QuickCardOverlay: View {
                         SoundPlayer.shared.play(.filmFly)
                         Haptic.lightTap()
                     })
-                .frame(width: Self.cardW, height: Self.artH)
+                .frame(width: Self.cardW - ins.leading - ins.trailing,
+                       height: Self.artH - ins.top - ins.bottom)
+                .offset(x: ins.leading, y: ins.top)
             }
         }
-        // 图层卡容器裸装：阴影走 drop-shadow（0 14 30 / 0 4 9）
-        .shadow(color: SceneTokens.shadowInk.opacity(0.22), radius: 15, y: 14)
-        .shadow(color: SceneTokens.shadowInk.opacity(0.12), radius: 4.5, y: 4)
         .contentShape(Rectangle())
         .onTapGesture {
             if gone { onEnter() } // 撕开后整卡可点，不放内部按钮

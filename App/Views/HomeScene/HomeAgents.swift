@@ -26,6 +26,10 @@ struct PetSpec: Identifiable {
     let phase: Double
     /// 拍立得倾斜角：每只斜法不一样
     let tilt: Double
+    /// 覆膜在 246×328 卡面里的可见框内衬（PNG 画布四周是透明余白，
+    /// pageCurl 只能卷这块实膜，否则连隐形边一起翻、阴影涂在透明区上。
+    /// 数值 = 各 cover.png 的 alpha 包围盒实测 ÷ 4.41463，2026-08-01）
+    let coverInsets: EdgeInsets
 
     var id: PetKey { key }
     func art(_ state: PetState) -> String { "art/\(key.rawValue)-\(state.rawValue).png" }
@@ -36,13 +40,16 @@ struct PetSpec: Identifiable {
 let PET_SPECS: [PetSpec] = [
     PetSpec(key: .chatgpt, name: "ChatGPT", role: "什么都能聊两句",
             previewFallback: "那份提纲我又绕回去看了一遍，第三段其实可以整段删掉。",
-            timeFallback: "14:02", unreadFallback: 0, phase: 0, tilt: -3.2),
+            timeFallback: "14:02", unreadFallback: 0, phase: 0, tilt: -3.2,
+            coverInsets: EdgeInsets(top: 7.9, leading: 17.0, bottom: 9.1, trailing: 17.9)),
     PetSpec(key: .claude, name: "Claude", role: "把长东西读薄",
             previewFallback: "昨晚那篇论文我读完了，结论没有它自己说的那么硬，我标了三处。",
-            timeFallback: "13:47", unreadFallback: 3, phase: 1.1, tilt: 2.4),
+            timeFallback: "13:47", unreadFallback: 3, phase: 1.1, tilt: 2.4,
+            coverInsets: EdgeInsets(top: 7.2, leading: 12.0, bottom: 3.9, trailing: 16.1)),
     PetSpec(key: .glm, name: "GLM", role: "慢慢想，想清楚",
             previewFallback: "你上周问的那个问题，我想到一个更笨但更稳的办法。",
-            timeFallback: "11:20", unreadFallback: 1, phase: 2.3, tilt: -2),
+            timeFallback: "11:20", unreadFallback: 1, phase: 2.3, tilt: -2,
+            coverInsets: EdgeInsets(top: 8.4, leading: 17.0, bottom: 9.3, trailing: 17.9)),
 ]
 
 /// 未读环绕贴纸槽位（祐祐拼版逐只测绘，2026-07-31 二调定稿）。

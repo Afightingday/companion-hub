@@ -4,13 +4,24 @@ import UIKit
 /// B6：拍立得覆膜的原生软翻页（2026-08-01 祐祐收官清单②）。
 /// Demo 的 CoverLift 硬翻牌在正式版换成 UIPageViewController(.pageCurl)——
 /// 公开 UIKit API、跟手、可半途回弹，本身即软卷页，以「软」为准绳。
-/// 页序（isDoubleSided）：[膜面, 膜背(素色镜像), 透明揭示页]，
-/// 翻走落在透明页上→穿透看到底卡→通知外层摘膜。
+/// 页序（isDoubleSided）：[膜面, 膜背(素色镜像), 揭示页(底卡同区域)]，
+/// 翻走落在揭示页上→与真身底卡无缝重合→通知外层摘膜。
 /// 摘要/时间/掀开提示手写在膜面空白正中央，随膜一起翻走。
+///
+/// 容器必须是膜的「实测可见框」（cardSize 内衬 insets）：拍立得 PNG 画布
+/// 四周有透明余白，若按整卡挂载，pageCurl 会连隐形边一起卷、系统卷页
+/// 阴影涂满透明区——真机上就是「黑乎乎一大页」（2026-08-01 实证）。
+/// 三页都按整卡尺寸铺图再往左上挪 insets，页内像素与底卡逐点对位。
 struct CoverCurlView: UIViewControllerRepresentable {
     let coverPath: String
+    /// 底卡图路径：给揭示页画「翻完后该露出的那块」，卷页影有实底可落
+    let cardPath: String
     let preview: String
     let time: String
+    /// 整卡设计尺寸（246×328）
+    let cardSize: CGSize
+    /// 膜可见框在整卡里的内衬（各 cover.png alpha 包围盒实测）
+    let insets: EdgeInsets
     var onCurlStart: () -> Void
     var onCancelled: () -> Void
     var onDone: () -> Void
@@ -54,9 +65,12 @@ struct CoverCurlView: UIViewControllerRepresentable {
         func buildPages(_ parent: CoverCurlView) {
             let face = UIHostingController(rootView: FilmFaceView(
                 coverPath: parent.coverPath, preview: parent.preview,
-                time: parent.time, state: filmState))
-            let back = UIHostingController(rootView: FilmBackView(coverPath: parent.coverPath))
-            let reveal = UIViewController()
+                time: parent.time, cardSize: parent.cardSize,
+                insets: parent.insets, state: filmState))
+            let back = UIHostingController(rootView: FilmBackView(
+                coverPath: parent.coverPath, cardSize: parent.cardSize, insets: parent.insets))
+            let reveal = UIHostingController(rootView: FilmRevealView(
+                cardPath: parent.cardPath, cardSize: parent.cardSize, insets: parent.insets))
             for vc in [face, back, reveal] {
                 vc.view.backgroundColor = .clear
             }
@@ -100,66 +114,89 @@ final class FilmNoteState: ObservableObject {
     @Published var hintHidden = false
 }
 
-/// 膜面：整卡覆膜图 + 空白区手写摘要（card.css .cover-lift__note 对位）
+/// 膜面：整卡覆膜图按可见框偏移映射 + 空白区手写摘要
+///（card.css .cover-lift__note 对位：横 72%、纵 65% 都相对整卡换算）
 struct FilmFaceView: View {
     let coverPath: String
     let preview: String
     let time: String
+    let cardSize: CGSize
+    let insets: EdgeInsets
     @ObservedObject var state: FilmNoteState
 
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-            ZStack {
-                SceneAsset.image(coverPath)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: w, height: h)
+        let pageW = cardSize.width - insets.leading - insets.trailing
+        let pageH = cardSize.height - insets.top - insets.bottom
+        ZStack(alignment: .topLeading) {
+            SceneAsset.image(coverPath)
+                .resizable()
+                .frame(width: cardSize.width, height: cardSize.height)
+                .offset(x: -insets.leading, y: -insets.top)
 
-                VStack(spacing: 0) {
-                    Text(preview)
-                        .font(SceneFont.note(14.5))
-                        .foregroundStyle(SceneTokens.ink600)
-                        .lineSpacing(4)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                        .padding(.bottom, 7)
-                    Text(time)
-                        .font(SceneFont.note(11.5))
-                        .foregroundStyle(SceneTokens.ink600.opacity(0.62))
-                    Text("捻住一角，轻轻掀开")
-                        .font(SceneFont.note(12))
-                        .tracking(1.4)
-                        .foregroundStyle(SceneTokens.sage600)
-                        .opacity(state.hintHidden ? 0 : 0.85)
-                        .animation(.sceneStandard(0.2), value: state.hintHidden)
-                        .padding(.top, 13)
-                }
-                .frame(width: w * 0.72)
-                .position(x: w / 2, y: h * 0.65)
+            VStack(spacing: 0) {
+                Text(preview)
+                    .font(SceneFont.note(14.5))
+                    .foregroundStyle(SceneTokens.ink600)
+                    .lineSpacing(4)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .padding(.bottom, 7)
+                Text(time)
+                    .font(SceneFont.note(11.5))
+                    .foregroundStyle(SceneTokens.ink600.opacity(0.62))
+                Text("捻住一角，轻轻掀开")
+                    .font(SceneFont.note(12))
+                    .tracking(1.4)
+                    .foregroundStyle(SceneTokens.sage600)
+                    .opacity(state.hintHidden ? 0 : 0.85)
+                    .animation(.sceneStandard(0.2), value: state.hintHidden)
+                    .padding(.top, 13)
             }
+            .frame(width: cardSize.width * 0.72)
+            .position(x: cardSize.width / 2 - insets.leading,
+                      y: cardSize.height * 0.65 - insets.top)
         }
-        .background(Color.clear)
+        .frame(width: pageW, height: pageH, alignment: .topLeading)
     }
 }
 
 /// 膜背：同一张剪影图压成素色纸背（brightness 1.12 / saturate .22 / contrast .92 的近似），
-/// 沿门轴镜像（demo 里背面绕铰链翻 180°）
+/// 沿门轴镜像（demo 里背面绕铰链翻 180°）——先裁到可见框再整页镜像
 struct FilmBackView: View {
     let coverPath: String
+    let cardSize: CGSize
+    let insets: EdgeInsets
 
     var body: some View {
-        GeometryReader { geo in
-            SceneAsset.image(coverPath)
-                .resizable()
-                .scaledToFill()
-                .frame(width: geo.size.width, height: geo.size.height)
-                .saturation(0.22)
-                .brightness(0.09)
-                .contrast(0.92)
-                .scaleEffect(x: -1)
-        }
-        .background(Color.clear)
+        SceneAsset.image(coverPath)
+            .resizable()
+            .frame(width: cardSize.width, height: cardSize.height)
+            .saturation(0.22)
+            .brightness(0.09)
+            .contrast(0.92)
+            .offset(x: -insets.leading, y: -insets.top)
+            .frame(width: cardSize.width - insets.leading - insets.trailing,
+                   height: cardSize.height - insets.top - insets.bottom,
+                   alignment: .topLeading)
+            .scaleEffect(x: -1)
+    }
+}
+
+/// 揭示页：不再用全透明页——pageCurl 过程中的卷页阴影要有实底可落，
+/// 全透明页会让系统把影子涂在遮罩/照片上，读作「黑乎乎」。
+/// 画的就是底卡同一区域，翻完与下方真身逐点重合，摘膜瞬间无缝。
+struct FilmRevealView: View {
+    let cardPath: String
+    let cardSize: CGSize
+    let insets: EdgeInsets
+
+    var body: some View {
+        SceneAsset.image(cardPath)
+            .resizable()
+            .frame(width: cardSize.width, height: cardSize.height)
+            .offset(x: -insets.leading, y: -insets.top)
+            .frame(width: cardSize.width - insets.leading - insets.trailing,
+                   height: cardSize.height - insets.top - insets.bottom,
+                   alignment: .topLeading)
     }
 }

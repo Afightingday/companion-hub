@@ -98,6 +98,7 @@ struct ScenePetView: View {
         .gesture(dragGesture)
         .onChange(of: hasMail) { syncHopTask() }
         .onChange(of: dragging) { syncHopTask() }
+        .onChange(of: pressing) { syncHopTask() }
         .onAppear {
             syncHopTask()
             startWinkLoop()
@@ -266,7 +267,8 @@ struct ScenePetView: View {
     // MARK: - 跳跳（有信才跳；拖拽即停）
 
     private func syncHopTask() {
-        let shouldHop = hasMail && !dragging
+        // 手一按住（pressing）就停跳：别等越过拖拽阈值才打断半空的那一跳
+        let shouldHop = hasMail && !dragging && !pressing
         if shouldHop && hopTask == nil {
             hopTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(spec.phase)) // 三只错峰
@@ -283,7 +285,11 @@ struct ScenePetView: View {
 
     @MainActor
     private func hopCycle() async {
+        // 取消检查必须在写状态之前：睡眠被取消后若不设防，后续 seg 会把
+        // 「落地压扁」帧补写进去、恢复段又被跳过——拖拽打断时小人就定格
+        // 在压缩态，直到下一轮跳循环才被救回（2026-08-01 真机实证）
         func seg(_ duration: Double, _ change: () -> Void) async {
+            guard !Task.isCancelled else { return }
             withAnimation(.sceneOut(duration)) { change() }
             try? await Task.sleep(for: .seconds(duration))
         }
@@ -302,7 +308,9 @@ struct ScenePetView: View {
             let last = i == Self.hopJumps.count - 1
             await seg(Self.hopRiseT) { hopY = -jumpH; hopSX = 2 - stretch; hopSY = stretch }
             await seg(Self.hopFallT) { hopY = 0; hopSX = sqx; hopSY = squash }
-            SoundPlayer.shared.play(.hopLand, volume: Float(jumpH / 28) * Float(jumpH / 28))
+            if !Task.isCancelled {
+                SoundPlayer.shared.play(.hopLand, volume: Float(jumpH / 28) * Float(jumpH / 28))
+            }
             if !last {
                 await seg(Self.hopLandT) { hopSX = 1 + (cx - 1) * 0.55; hopSY = crouch + 0.07 }
                 await seg(max(0.01, Self.hopGapT)) { hopSX = 1 + (cx - 1) * 0.7; hopSY = crouch + 0.04 }

@@ -7,6 +7,11 @@ import UIKit
 final class SoundPlayer {
     static let shared = SoundPlayer()
 
+    /// 音效总闸。v2 真机听感仍「不自然」（2026-08-01 祐祐），整体退回无声；
+    /// 素材与全部调用点保留，后续调好参数把这里拨回 true（或挂进案头开关）。
+    /// 触觉反馈不走这里，照常。
+    static let enabled = false
+
     enum Effect: String, CaseIterable {
         case tabTick = "tab-tick"       // 底栏切页
         case paperLift = "paper-lift"   // 拎起 pet
@@ -31,6 +36,7 @@ final class SoundPlayer {
     private var next: [Effect: Int] = [:]
 
     private init() {
+        guard Self.enabled else { return }
         try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
         for effect in Effect.allCases {
             guard let url = Self.url(for: effect) else { continue }
@@ -48,7 +54,7 @@ final class SoundPlayer {
 
     /// volume 是相对系数（0…1），叠在基础音量上
     func play(_ effect: Effect, volume: Float = 1) {
-        guard let pool = pools[effect], !pool.isEmpty else { return }
+        guard Self.enabled, let pool = pools[effect], !pool.isEmpty else { return }
         let i = (next[effect] ?? 0) % pool.count
         next[effect] = i + 1
         let player = pool[i]

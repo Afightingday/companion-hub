@@ -4,20 +4,23 @@ struct RootTabView: View {
     @State private var selection = 0
 
     var body: some View {
+        // 五 tab 定稿（2026-08-01 祐祐）：云笺（会话首页）、游艺（Agent 互动、
+        // 小游戏）、食帖（记录美食）、留声（一起听音乐）、案头（个人设置与
+        // Agent 管理）。光阴瓶撤编；图标暂用 SF Symbols，底栏重设计草样另议
         TabView(selection: $selection) {
             // 会话总览页（窗边手账工作室）取代微信式列表成为云笺首页；
             // 旧列表 YunjianView 保留在库里，B2 搜索重设计时再议去留
             HomeSceneView()
                 .tabItem { Label("云笺", systemImage: "ellipsis.bubble") }
                 .tag(0)
-            ComingSoonView(title: "食帖", subtitle: "美食档案 · 第 4 批搬进来", systemImage: "fork.knife")
-                .tabItem { Label("食帖", systemImage: "fork.knife") }
+            ComingSoonView(title: "游艺", subtitle: "和小家伙们的互动与小游戏 · 规划中", systemImage: "balloon")
+                .tabItem { Label("游艺", systemImage: "balloon") }
                 .tag(1)
-            ComingSoonView(title: "留声", subtitle: "歌词日志 · 第 4 批搬进来（含快捷指令播放）", systemImage: "music.note")
-                .tabItem { Label("留声", systemImage: "music.note") }
+            ComingSoonView(title: "食帖", subtitle: "美食档案 · 后续批次搬进来", systemImage: "fork.knife")
+                .tabItem { Label("食帖", systemImage: "fork.knife") }
                 .tag(2)
-            ComingSoonView(title: "光阴瓶", subtitle: "每日聚合 · 第 4 批搬进来", systemImage: "hourglass")
-                .tabItem { Label("光阴瓶", systemImage: "hourglass") }
+            ComingSoonView(title: "留声", subtitle: "一起听音乐 · 后续批次搬进来", systemImage: "music.note")
+                .tabItem { Label("留声", systemImage: "music.note") }
                 .tag(3)
             AntouView()
                 .tabItem { Label("案头", systemImage: "lamp.desk") }
