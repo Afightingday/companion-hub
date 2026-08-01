@@ -24,10 +24,12 @@ targets:
     sources:
       - path: App
         excludes:
-          - "Resources/**"
+          - "Media/**"
       # 文件夹引用（保留子路径）：art/… 与设计稿 public/ 同构，
-      # particles 三套 p1.png 同名文件靠目录区分，不能拍平成组
-      - path: App/Resources
+      # particles 三套 p1.png 同名文件靠目录区分，不能拍平成组。
+      # 名字禁用 Resources：包根出现该保留名会让 iOS 误判成老式 mac
+      # 包布局，安装报 IXErrorDomain 13「Missing bundle ID」（2026-08-01 真机实证）
+      - path: App/Media
         type: folder
         buildPhase: resources
     dependencies:
@@ -41,7 +43,7 @@ targets:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
         UIAppFonts:
-          - Resources/fonts/LXGWWenKaiScreen.ttf
+          - Media/fonts/LXGWWenKaiScreen.ttf
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.yushi.ios

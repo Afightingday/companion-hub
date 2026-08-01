@@ -7,8 +7,8 @@
    第一版「破响」病根已除：crackle 高频噪尖删除、thump 逐采样噪声幅调删除、
    带通由单极差分升级为二阶级联（高频裙边 12dB/oct，噪声不再发毛）。
    跑法：node tools/gen-assets.mjs   （在 apps/ios 下）
-   产物：App/Resources/sounds/*.wav（44.1kHz 16bit 单声道）
-        App/Resources/assets/grain.png（256² 两倍频程值噪声，soft-light 用） */
+   产物：App/Media/sounds/*.wav（44.1kHz 16bit 单声道）
+        App/Media/assets/grain.png（256² 两倍频程值噪声，soft-light 用） */
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
@@ -279,7 +279,7 @@ const sounds = {};
 }
 
 /* ── 写盘 ──────────────────────────────────────────── */
-const sndDir = join(ROOT, 'App/Resources/sounds');
+const sndDir = join(ROOT, 'App/Media/sounds');
 mkdirSync(sndDir, { recursive: true });
 for (const [name, buf] of Object.entries(sounds)) {
   writeFileSync(join(sndDir, `${name}.wav`), wav(buf));
@@ -338,6 +338,6 @@ for (const [name, buf] of Object.entries(sounds)) {
     chunk('IDAT', deflateSync(raw, { level: 9 })),
     chunk('IEND', Buffer.alloc(0)),
   ]);
-  writeFileSync(join(ROOT, 'App/Resources/assets/grain.png'), png);
+  writeFileSync(join(ROOT, 'App/Media/assets/grain.png'), png);
   console.log(`assets/grain.png  ${N}x${N}`);
 }

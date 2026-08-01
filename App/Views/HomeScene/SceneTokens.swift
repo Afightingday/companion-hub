@@ -47,7 +47,7 @@ extension Animation {
     static func sceneHover(_ d: Double) -> Animation { .timingCurve(0.34, 1.2, 0.64, 1, duration: d) }
 }
 
-// MARK: - 资产加载（Resources 以文件夹引用打包，子路径保留）
+// MARK: - 资产加载（Media 以文件夹引用打包，子路径保留；不能叫 Resources——iOS 会误判包布局）
 
 enum SceneAsset {
     private static var cache: [String: UIImage] = [:]
@@ -59,7 +59,7 @@ enum SceneAsset {
         let name = (ns.lastPathComponent as NSString).deletingPathExtension
         let ext = ns.pathExtension.isEmpty ? "png" : ns.pathExtension
         let dir = ns.deletingLastPathComponent
-        var url = Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "Resources/" + dir)
+        var url = Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "Media/" + dir)
         if url == nil { url = Bundle.main.url(forResource: name, withExtension: ext, subdirectory: dir) }
         if url == nil { url = Bundle.main.url(forResource: name, withExtension: ext) }
         let image = url.flatMap { UIImage(contentsOfFile: $0.path) } ?? UIImage()

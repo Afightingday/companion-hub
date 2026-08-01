@@ -45,9 +45,9 @@ swift test --package-path Core
 
 ## 第三方资产
 
-- 字体 `App/Resources/fonts/LXGWWenKaiScreen.ttf`（霞鹜文楷屏幕阅读版）：
+- 字体 `App/Media/fonts/LXGWWenKaiScreen.ttf`（霞鹜文楷屏幕阅读版）：
   SIL OFL 1.1 授权，许可证随包（同目录 `OFL-LICENSE.txt`）
-- `App/Resources/{art,assets}/` 内 PNG 均为祐祐验收定稿件，
+- `App/Media/{art,assets}/` 内 PNG 均为祐祐验收定稿件，
   与设计稿仓 `sandbox/youshi-home/public/` 逐字节同源；音效与纸纹由
   `node tools/gen-assets.mjs` 确定性生成，可复现
 
