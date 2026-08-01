@@ -1,9 +1,118 @@
 import SwiftUI
+import YushiKit
 
-/// 手账组件（chrome.css 对位）：搜索纸签⇢便笺条、墨水瓶羽毛笔。
+/// 手账组件（chrome.css 对位）：搜索、墨水瓶羽毛笔。
 /// 底栏/状态栏/Home 条不再自绘——正式版全走系统（SwiftUI TabView + 真机自带）。
 
-// MARK: - 搜索：纸签 ⇢ 便笺条（B2 重设计前的过渡占位，交互只到展开）
+// MARK: - 搜索 sheet（B2 第二步，1.9 四审定位）
+// 入口 = 场景老位置的系统玻璃圆钮（HomeSceneView），点开本 sheet：
+// 键盘随 sheet 自动聚焦；结果 = 三只 pet 名字/定位/最近一句本地过滤；
+// 点行收 sheet、回场景开那只的速览卡。
+
+struct SearchSheetView: View {
+    /// 选中某只：由场景收 sheet + 开卡
+    var onPick: (PetKey) -> Void
+
+    @Environment(AppModel.self) private var appModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var contacts: [PetKey: ContactListItem] = [:]
+    @FocusState private var fieldFocused: Bool
+
+    private var hits: [PetSpec] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return PET_SPECS }
+        return PET_SPECS.filter { spec in
+            let last = contacts[spec.key]?.lastMessage?.text ?? spec.previewFallback
+            return spec.name.lowercased().contains(q)
+                || spec.role.lowercased().contains(q)
+                || last.lowercased().contains(q)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(hits) { spec in
+                Button {
+                    Haptic.softTap()
+                    onPick(spec.key)
+                } label: {
+                    row(spec)
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparatorTint(SceneTokens.cream500)
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(SceneTokens.paperPage.ignoresSafeArea())
+            .overlay {
+                if hits.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                }
+            }
+            .navigationTitle("寻旧识")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query,
+                        placement: .navigationBarDrawer(displayMode: .always),
+                        prompt: "寻旧识，拾旧话")
+            .searchFocused($fieldFocused)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("收起") { dismiss() }
+                        .foregroundStyle(SceneTokens.ink500)
+                }
+            }
+        }
+        .task { await load() }
+        .task {
+            // 等 sheet 弹定再聚焦，键盘和转场动画不打架
+            try? await Task.sleep(for: .seconds(0.4))
+            fieldFocused = true
+        }
+    }
+
+    private func row(_ spec: PetSpec) -> some View {
+        HStack(spacing: 12) {
+            SceneAsset.image(spec.art(.happy))
+                .resizable()
+                .scaledToFit()
+                .frame(width: 40, height: 46)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(spec.name)
+                    .font(SceneFont.note(17))
+                    .foregroundStyle(SceneTokens.ink800)
+                Text(contacts[spec.key]?.lastMessage?.text ?? spec.previewFallback)
+                    .font(.system(size: 13))
+                    .foregroundStyle(SceneTokens.ink400)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(time(spec))
+                .font(SceneFont.note(11))
+                .foregroundStyle(SceneTokens.ink300)
+        }
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
+    }
+
+    private func time(_ spec: PetSpec) -> String {
+        if let sentAt = contacts[spec.key]?.lastMessage?.sentAt {
+            let shown = PaperFormat.shortTime(sentAt)
+            if !shown.isEmpty { return shown }
+        }
+        return spec.timeFallback
+    }
+
+    @MainActor
+    private func load() async {
+        guard let client = appModel.client else { return }
+        if let items = try? await client.listContacts() {
+            contacts = PetContactMatch.map(items)
+        }
+    }
+}
+
+// MARK: - 搜索：纸签 ⇢ 便笺条（1.8 退役留库；1.9 起入口改玻璃圆钮+sheet）
 
 struct SearchNoteView: View {
     let quiet: Bool

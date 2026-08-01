@@ -25,9 +25,6 @@ final class AppModel {
 
     var connection: ConnectionState = .unknown
 
-    /// 搜索页点了某只 pet：跳回云笺 tab，由场景消费此传令、开那只的速览卡
-    var pendingOpenPet: PetKey?
-
     init() {
         gatewayURLString = UserDefaults.standard.string(forKey: Self.urlDefaultsKey) ?? ""
         authToken = Keychain.string(forKey: Self.tokenKeychainKey) ?? ""

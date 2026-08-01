@@ -24,6 +24,7 @@ struct HomeSceneView: View {
     @State private var openPet: PetKey?
     @State private var chatPet: PetKey?
     @State private var dragPet: PetKey?
+    @State private var searchOpen = false
 
     @State private var parallax = MotionParallax()
     /// 滴墨声画同步的节拍器（onChange 里取到的才是新鲜状态）
@@ -42,12 +43,16 @@ struct HomeSceneView: View {
         }
         .ignoresSafeArea()
         .toolbar(openPet != nil ? .hidden : .visible, for: .tabBar)
-        .onChange(of: appModel.pendingOpenPet) {
-            // 搜索页传令：开某只的速览卡（1.8 起原生搜索 tab 接管寻旧识）
-            if let key = appModel.pendingOpenPet {
-                appModel.pendingOpenPet = nil
-                openPet = key
-                SoundPlayer.shared.play(.cardOpen)
+        .sheet(isPresented: $searchOpen) {
+            SearchSheetView { key in
+                searchOpen = false
+                Task { @MainActor in
+                    // 等 sheet 收完再开卡，两段动画不叠打
+                    try? await Task.sleep(for: .seconds(0.3))
+                    openPet = key
+                    SoundPlayer.shared.play(.cardOpen)
+                    Haptic.softTap()
+                }
             }
         }
         .fullScreenCover(item: $chatPet, onDismiss: { Task { await refresh() } }) { key in
@@ -134,7 +139,30 @@ struct HomeSceneView: View {
                 .blendMode(.softLight)
                 .allowsHitTesting(false)
 
-            // ── 手账外壳件（搜索纸签 1.8 退役：改走系统搜索 tab）──
+            // ── 手账外壳件 ──
+            // 搜索入口（1.9 四审定位）：系统玻璃圆钮原地替换当年的纸签，
+            // 不占底栏（搜索 tab 会把案头挤进 More）；点开 sheet 弹键盘
+            ZStack(alignment: .bottomLeading) {
+                Color.clear
+                Button {
+                    Haptic.softTap()
+                    searchOpen = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 19, weight: .medium))
+                        .foregroundStyle(SceneTokens.ink600)
+                        .frame(width: 52, height: 52)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .opacity(quiet ? 0.28 : 1)
+                .scaleEffect(quiet ? 0.86 : 1, anchor: .bottomLeading)
+                .animation(.sceneStandard(0.32), value: quiet)
+                .allowsHitTesting(!quiet)
+                .accessibilityLabel("搜索")
+                .padding(.leading, 14)
+                .padding(.bottom, 122)
+            }
             ZStack(alignment: .topLeading) {
                 Color.clear
                 QuillWellView(quiet: quiet)
