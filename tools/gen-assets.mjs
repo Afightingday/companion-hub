@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 /* B12 音效 + 纸纹生成器（零依赖，确定性输出）。
-   调性口径（docs/08 B12）：纸声、笔触、轻物落桌，忌电子音效感——
-   因此全部用滤波噪声/阻尼低频/短促瞬态合成，不放裸正弦长音。
+   调性口径（docs/08 B12 + 2026-08-01 祐祐试听改向）：
+   - 人物弹跳/落地 → 「duang」弹性质感（音高快滑落 + 弹簧颤音，非打击噪声）
+   - 纸张翻页族   → 轻柔舒缓治愈（汉宁软包络膨胀 + 极低暖音垫，无任何噪尖）
+   - 全局仍忌电子感：重低通、软饱和、不放裸高频
+   第一版「破响」病根已除：crackle 高频噪尖删除、thump 逐采样噪声幅调删除、
+   带通由单极差分升级为二阶级联（高频裙边 12dB/oct，噪声不再发毛）。
    跑法：node tools/gen-assets.mjs   （在 apps/ios 下）
    产物：App/Resources/sounds/*.wav（44.1kHz 16bit 单声道）
         App/Resources/assets/grain.png（256² 两倍频程值噪声，soft-light 用） */
@@ -38,30 +42,49 @@ function lowpass(cutHz) {
   };
 }
 
-/** 带通 = 两级低通差分（宽 Q，够纸声用） */
+/** 带通 = 二阶级联低通差分：裙边 12dB/oct，白噪过完不发毛 */
 function bandpass(centerHz, width = 0.6) {
-  const lo = lowpass(centerHz * (1 + width));
-  const hi = lowpass(centerHz * (1 - width));
-  return (x, hz = centerHz) => lo(x, hz * (1 + width)) - hi(x, hz * (1 - width));
+  const lo1 = lowpass(centerHz), lo2 = lowpass(centerHz);
+  const hi1 = lowpass(centerHz), hi2 = lowpass(centerHz);
+  return (x, hz = centerHz) => {
+    const up = hz * (1 + width), dn = hz * (1 - width);
+    return lo2(lo1(x, up), up) - hi2(hi1(x, dn), dn);
+  };
 }
 
 /** 指数衰减包络 */
 const decay = (t, tau) => Math.exp(-t / tau);
-/** 起音包络（0→1） */
-const attack = (t, tau) => 1 - Math.exp(-t / tau);
+/** 汉宁窗片段：t∈[t0,t0+T] 内 sin² 起落，外面为 0——软膨胀专用 */
+const hann = (t, t0, T) => (t < t0 || t > t0 + T ? 0 : Math.sin((Math.PI * (t - t0)) / T) ** 2);
 
-/** 阻尼低频「实体感」：正弦掉音高 + 噪声幅调，听感是软物而不是电子音 */
-function thump(rand, n, { f0, f1, tau, noiseAmt = 0.18, lpHz = 700 }) {
+/** 阻尼低频「实体感」：音高滑落的暗正弦 + 一点二次谐波，无噪声成分 */
+function thump(n, { f0, f1, tau, lpHz = 700, h2 = 0.18 }) {
   const out = new Float64Array(n);
   const lp = lowpass(lpHz);
   let phase = 0;
   for (let i = 0; i < n; i++) {
     const t = i / SR;
-    const k = Math.min(1, t / 0.012);
     const f = f0 + (f1 - f0) * Math.min(1, t / 0.08);
     phase += (2 * Math.PI * f) / SR;
-    const wob = 1 + noiseAmt * (rand() * 2 - 1);
-    out[i] = lp(Math.sin(phase) * wob) * decay(t, tau) * k;
+    const s = Math.sin(phase) + h2 * Math.sin(2 * phase) * decay(t, tau * 0.6);
+    out[i] = lp(s) * decay(t, tau) * Math.min(1, t / 0.01);
+  }
+  return out;
+}
+
+/** duang：Q 弹落地——音高快速滑落到基频 + 弹簧频率颤音（衰减的 wobble），
+    重低通压亮度，听感是软软的果冻/弹簧，不是鼓点 */
+function boing(n, { f0, f1, tau, glideT = 0.035, wobHz = 13, wob = 0.05, wobTau = 0.15, lpHz = 850, h2 = 0.22 }) {
+  const out = new Float64Array(n);
+  const lp = lowpass(lpHz);
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    const glide = f1 + (f0 - f1) * Math.exp(-t / glideT);
+    const spring = 1 + wob * Math.sin(2 * Math.PI * wobHz * t) * Math.exp(-t / wobTau);
+    phase += (2 * Math.PI * glide * spring) / SR;
+    const s = Math.sin(phase) + h2 * Math.sin(2 * phase) * decay(t, tau * 0.55);
+    out[i] = lp(s) * decay(t, tau) * Math.min(1, t / 0.006);
   }
   return out;
 }
@@ -77,15 +100,27 @@ function paper(rand, n, { hzAt, width = 0.55, env }) {
   return out;
 }
 
-/** 微瞬态（纸的细碎「咔」）：几毫秒的高通噪尖 */
-function crackle(rand, n, at, amp = 1) {
+/** 软触点：重低通短噪（指腹碰到纸/桌的那一下），替代已删除的高频噪尖 */
+function tap(rand, n, t0, { ms = 16, lpHz = 900, amp = 1 } = {}) {
   const out = new Float64Array(n);
-  for (const [t0, a] of at) {
-    const s0 = sec(t0);
-    const len = sec(0.004 + rand() * 0.004);
-    for (let i = 0; i < len && s0 + i < n; i++) {
-      out[s0 + i] += (rand() * 2 - 1) * decay(i / SR, 0.0016) * a * amp;
-    }
+  const lp = lowpass(lpHz);
+  const s0 = sec(t0), len = sec(ms / 1000);
+  for (let i = 0; i < len && s0 + i < n; i++) {
+    const t = i / SR;
+    out[s0 + i] = lp(rand() * 2 - 1) * hann(t, 0, ms / 1000) * amp;
+  }
+  return out;
+}
+
+/** 暖音垫：极低幅的暗正弦，给「治愈」一点温度（藏在噪声下面，听不出音高） */
+function tone(n, { hz, t0, T, amp, lpHz = 600 }) {
+  const out = new Float64Array(n);
+  const lp = lowpass(lpHz);
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    phase += (2 * Math.PI * hz) / SR;
+    out[i] = lp(Math.sin(phase) + 0.25 * Math.sin(2 * phase)) * hann(t, t0, T) * amp;
   }
   return out;
 }
@@ -122,129 +157,125 @@ function wav(buf) {
   return b;
 }
 
-/* ── 十枚音效 ──────────────────────────────────────── */
+/* ── 十枚音效（文件名与 SoundPlayer.Effect 一一对应，勿改名） ── */
 const sounds = {};
 
-/* 底栏切页：一记很轻的笔触点，几乎只有质感没有音高 */
+/* 底栏切页：一记闷闷的「嗒」，几乎只有质感没有音高 */
 {
   const rand = mulberry32(101);
-  const n = sec(0.06);
+  const n = sec(0.07);
   sounds['tab-tick'] = master(mix(n,
-    paper(rand, n, { hzAt: () => 2100, env: (t) => attack(t, 0.002) * decay(t, 0.012) }),
-    thump(rand, n, { f0: 220, f1: 170, tau: 0.014, lpHz: 500 }).map((v) => v * 0.25),
-  ), 0.32);
+    thump(n, { f0: 240, f1: 190, tau: 0.02, lpHz: 500, h2: 0.15 }),
+    paper(rand, n, { hzAt: () => 1100, width: 0.5, env: (t) => hann(t, 0, 0.04) }).map((v) => v * 0.3),
+  ), 0.3);
 }
 
-/* 拖拽拎起：纸片离面，噪声轻扫上行 */
+/* 拖拽拎起：纸片轻轻离面，一小口软气流 */
 {
   const rand = mulberry32(102);
-  const n = sec(0.1);
+  const n = sec(0.12);
   sounds['paper-lift'] = master(
-    paper(rand, n, { hzAt: (t) => 900 + 900 * (t / 0.1), env: (t) => attack(t, 0.012) * decay(t, 0.045) }),
-    0.34);
-}
-
-/* 拖拽落定：轻物落桌——软木面沉一下 + 极短纸擦 */
-{
-  const rand = mulberry32(103);
-  const n = sec(0.16);
-  sounds['paper-drop'] = master(mix(n,
-    thump(rand, n, { f0: 185, f1: 120, tau: 0.05, lpHz: 620 }),
-    paper(rand, n, { hzAt: () => 1500, env: (t) => decay(t, 0.012) }).map((v) => v * 0.4),
-    crackle(rand, n, [[0.001, 1]], 0.35),
-  ), 0.46);
-}
-
-/* pet 跳跳落地：比落桌更软更圆（毯感），跳三次各配一记 */
-{
-  const rand = mulberry32(104);
-  const n = sec(0.09);
-  sounds['hop-land'] = master(mix(n,
-    thump(rand, n, { f0: 150, f1: 105, tau: 0.036, lpHz: 420, noiseAmt: 0.24 }),
-    paper(rand, n, { hzAt: () => 900, env: (t) => decay(t, 0.008) }).map((v) => v * 0.22),
-  ), 0.4);
-}
-
-/* 开卡：拍立得抽出来——纸滑上行长扫 + 到位小顿 */
-{
-  const rand = mulberry32(105);
-  const n = sec(0.2);
-  const slide = paper(rand, n, {
-    hzAt: (t) => 800 + 1700 * Math.min(1, t / 0.13),
-    env: (t) => attack(t, 0.02) * decay(t, 0.075),
-  });
-  const settle = new Float64Array(n);
-  settle.set(thump(rand, sec(0.06), { f0: 200, f1: 150, tau: 0.02, lpHz: 700 }).map((v) => v * 0.5), sec(0.135));
-  sounds['card-open'] = master(mix(n, slide, settle, crackle(rand, n, [[0.004, 0.8], [0.02, 0.5]], 0.3)), 0.44);
-}
-
-/* 收卡：反向短扫，更轻 */
-{
-  const rand = mulberry32(106);
-  const n = sec(0.14);
-  sounds['card-close'] = master(
-    paper(rand, n, { hzAt: (t) => 2100 - 1300 * (t / 0.14), env: (t) => attack(t, 0.008) * decay(t, 0.05) }),
+    paper(rand, n, { hzAt: (t) => 600 + 350 * Math.min(1, t / 0.1), width: 0.5, env: (t) => hann(t, 0, 0.11) }),
     0.32);
 }
 
-/* 掀膜起手：膜面受力微弯，细碎纸脆 + 低幅弯折噪 */
+/* 拖拽落定：深一点的 duang（从手里放下来，比跳跳沉） */
+{
+  const rand = mulberry32(103);
+  const n = sec(0.36);
+  sounds['paper-drop'] = master(mix(n,
+    boing(n, { f0: 235, f1: 112, tau: 0.11, glideT: 0.04, wobHz: 11.5, wob: 0.05, wobTau: 0.18, lpHz: 780, h2: 0.25 }),
+    tap(rand, n, 0.002, { ms: 16, lpHz: 800, amp: 0.3 }),
+    paper(rand, n, { hzAt: () => 700, width: 0.5, env: (t) => hann(t, 0, 0.05) }).map((v) => v * 0.15),
+  ), 0.46);
+}
+
+/* pet 跳跳落地：小 duang——更高更快更轻，三连跳听感 duang-duang-duang */
+{
+  const rand = mulberry32(104);
+  const n = sec(0.3);
+  sounds['hop-land'] = master(mix(n,
+    boing(n, { f0: 285, f1: 150, tau: 0.085, glideT: 0.03, wobHz: 13.5, wob: 0.06, wobTau: 0.15, lpHz: 900, h2: 0.22 }),
+    tap(rand, n, 0.001, { ms: 12, lpHz: 900, amp: 0.22 }),
+  ), 0.42);
+}
+
+/* 开卡：拍立得轻轻递到面前——软膨胀上行 + 收尾抚平 + 暖垫 */
+{
+  const rand = mulberry32(105);
+  const n = sec(0.4);
+  const settle = new Float64Array(n);
+  settle.set(thump(sec(0.06), { f0: 190, f1: 150, tau: 0.025, lpHz: 550 }).map((v) => v * 0.22), sec(0.28));
+  sounds['card-open'] = master(mix(n,
+    paper(rand, n, { hzAt: (t) => 520 + 520 * Math.min(1, t / 0.18), width: 0.5, env: (t) => hann(t, 0, 0.22) }),
+    paper(rand, n, { hzAt: (t) => 900 - 380 * Math.min(1, Math.max(0, t - 0.16) / 0.2), width: 0.5, env: (t) => hann(t, 0.16, 0.2) }).map((v) => v * 0.55),
+    tone(n, { hz: 170, t0: 0.02, T: 0.28, amp: 0.1 }),
+    settle,
+  ), 0.42);
+}
+
+/* 收卡：一口软气流放下去，更轻更暗 */
+{
+  const rand = mulberry32(106);
+  const n = sec(0.26);
+  sounds['card-close'] = master(
+    paper(rand, n, { hzAt: (t) => 950 - 450 * (t / 0.26), width: 0.5, env: (t) => hann(t, 0, 0.24) }),
+    0.3);
+}
+
+/* 掀膜起手：指腹搭上膜面的一口气，若有若无 */
 {
   const rand = mulberry32(107);
-  const n = sec(0.15);
+  const n = sec(0.24);
   sounds['film-curl'] = master(mix(n,
-    paper(rand, n, { hzAt: (t) => 1400 + 500 * Math.sin(t * 34), env: (t) => attack(t, 0.01) * decay(t, 0.055) }),
-    crackle(rand, n, [[0.008, 1], [0.03, 0.7], [0.062, 0.5], [0.1, 0.35]], 0.5),
-  ), 0.34);
+    paper(rand, n, { hzAt: (t) => 480 + 280 * Math.min(1, t / 0.2), width: 0.45, env: (t) => hann(t, 0, 0.22) }),
+    tone(n, { hz: 240, t0: 0, T: 0.18, amp: 0.06 }),
+  ), 0.3);
 }
 
-/* 掀膜翻走：整页掀离的鼓风 + 尾段扑翼颤 + 远处极轻落点 */
+/* 掀膜翻走：治愈系翻页——抬起软膨胀、放走软收束、远处极轻落定，无扑翼颤 */
 {
   const rand = mulberry32(108);
-  const n = sec(0.3);
-  const whoosh = paper(rand, n, {
-    hzAt: (t) => (t < 0.12 ? 700 + 2400 * (t / 0.12) : 3100 - 2100 * ((t - 0.12) / 0.18)),
-    width: 0.7,
-    env: (t) => attack(t, 0.03) * decay(Math.max(0, t - 0.05), 0.1),
-  }).map((v, i) => {
-    const t = i / SR; // 尾段 28Hz 扑翼幅调
-    return v * (t > 0.16 ? 0.6 + 0.4 * Math.sin(2 * Math.PI * 28 * t) : 1);
-  });
+  const n = sec(0.5);
+  const lift = paper(rand, n, { hzAt: (t) => 430 + 420 * Math.min(1, t / 0.18), width: 0.55, env: (t) => hann(t, 0, 0.18) });
+  const release = paper(rand, n, { hzAt: (t) => 880 - 480 * Math.min(1, Math.max(0, t - 0.15) / 0.3), width: 0.6, env: (t) => hann(t, 0.15, 0.3) }).map((v) => v * 0.9);
+  const warm = tone(n, { hz: 205, t0: 0.06, T: 0.3, amp: 0.11 });
   const far = new Float64Array(n);
-  far.set(thump(rand, sec(0.05), { f0: 170, f1: 130, tau: 0.018, lpHz: 450 }).map((v) => v * 0.22), sec(0.24));
-  sounds['film-fly'] = master(mix(n, whoosh, far), 0.46);
+  far.set(thump(sec(0.08), { f0: 165, f1: 125, tau: 0.03, lpHz: 380 }).map((v) => v * 0.2), sec(0.36));
+  sounds['film-fly'] = master(mix(n, lift, release, warm, far), 0.44);
 }
 
-/* 滴墨：水滴「叮咚」的哑光版——短击 + 上行小啁啾，重低通压掉电子感 */
+/* 滴墨：水滴的哑光版——软触点 + 上行小啁啾，重低通，很轻 */
 {
   const rand = mulberry32(109);
-  const n = sec(0.17);
+  const n = sec(0.18);
   const chirp = new Float64Array(n);
-  const lp = lowpass(1900);
+  const lp = lowpass(1500);
   let phase = 0;
   for (let i = 0; i < n; i++) {
     const t = i / SR;
-    if (t < 0.012) continue; // 先有一粒击水点
+    if (t < 0.012) continue;
     const u = Math.min(1, (t - 0.012) / 0.05);
-    phase += (2 * Math.PI * (520 + 470 * u * u)) / SR;
-    chirp[i] = lp(Math.sin(phase)) * decay(t - 0.012, 0.045) * attack(t - 0.012, 0.004);
+    phase += (2 * Math.PI * (500 + 430 * u * u)) / SR;
+    chirp[i] = lp(Math.sin(phase)) * decay(t - 0.012, 0.05) * Math.min(1, (t - 0.012) / 0.004);
   }
   sounds['ink-drop'] = master(mix(n,
-    crackle(rand, n, [[0.002, 1]], 0.5),
-    chirp.map((v) => v * 0.8),
-    paper(rand, n, { hzAt: () => 2600, env: (t) => (t > 0.05 ? decay(t - 0.05, 0.03) * 0.1 : 0) }),
-  ), 0.36);
+    tap(rand, n, 0.002, { ms: 8, lpHz: 1200, amp: 0.5 }),
+    chirp.map((v) => v * 0.75),
+    paper(rand, n, { hzAt: () => 2000, width: 0.5, env: (t) => hann(t, 0.06, 0.08) }).map((v) => v * 0.08),
+  ), 0.32);
 }
 
-/* 进入对话：展笺——两段纸滑（展开、抚平），收尾轻定 */
+/* 进入对话：展笺——两段软膨胀慢慢展开 + 暖垫 + 收尾轻定 */
 {
   const rand = mulberry32(110);
-  const n = sec(0.3);
-  const a = paper(rand, n, { hzAt: (t) => 700 + 1200 * Math.min(1, t / 0.09), env: (t) => attack(t, 0.015) * decay(t, 0.05) });
-  const b = new Float64Array(n);
-  b.set(paper(rand, sec(0.16), { hzAt: (t) => 1200 + 1400 * Math.min(1, t / 0.08), env: (t) => attack(t, 0.012) * decay(t, 0.055) }).map((v) => v * 0.8), sec(0.12));
+  const n = sec(0.5);
+  const a = paper(rand, n, { hzAt: (t) => 480 + 500 * Math.min(1, t / 0.18), width: 0.5, env: (t) => hann(t, 0, 0.22) });
+  const b = paper(rand, n, { hzAt: (t) => 820 - 370 * Math.min(1, Math.max(0, t - 0.18) / 0.26), width: 0.55, env: (t) => hann(t, 0.18, 0.26) }).map((v) => v * 0.7);
+  const warm = tone(n, { hz: 195, t0: 0.05, T: 0.34, amp: 0.12 });
   const settle = new Float64Array(n);
-  settle.set(thump(rand, sec(0.06), { f0: 190, f1: 140, tau: 0.02, lpHz: 600 }).map((v) => v * 0.35), sec(0.23));
-  sounds['enter-chat'] = master(mix(n, a, b, settle), 0.42);
+  settle.set(thump(sec(0.07), { f0: 175, f1: 135, tau: 0.028, lpHz: 500 }).map((v) => v * 0.25), sec(0.34));
+  sounds['enter-chat'] = master(mix(n, a, b, warm, settle), 0.42);
 }
 
 /* ── 写盘 ──────────────────────────────────────────── */
