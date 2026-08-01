@@ -41,27 +41,24 @@ public struct SSEParser: Sendable {
 
     /// 取出一整行并从缓冲移除；行终止符 \n、\r\n、\r 均可。
     /// 缓冲以孤立 \r 结尾时先不消费 —— 它可能是被块边界劈开的 \r\n 前半。
-    /// ⚠️ 必须在 unicodeScalars 视图上扫描：Character 视图会把 \r\n 合成一个字素簇，
-    /// 与 "\n"/"\r" 都不相等，CRLF 换行会被整个跳过（Linux CI 首跑抓出的真 bug）。
     private mutating func nextLine() -> String? {
-        let scalars = pending.unicodeScalars
-        var i = scalars.startIndex
-        while i < scalars.endIndex {
-            let ch = scalars[i]
+        var i = pending.startIndex
+        while i < pending.endIndex {
+            let ch = pending[i]
             if ch == "\n" {
-                let line = String(String.UnicodeScalarView(scalars[..<i]))
-                pending = String(String.UnicodeScalarView(scalars[scalars.index(after: i)...]))
+                let line = String(pending[..<i])
+                pending.removeSubrange(...i)
                 return line
             }
             if ch == "\r" {
-                let next = scalars.index(after: i)
-                if next == scalars.endIndex { return nil }
-                let line = String(String.UnicodeScalarView(scalars[..<i]))
-                let after = scalars[next] == "\n" ? scalars.index(after: next) : next
-                pending = String(String.UnicodeScalarView(scalars[after...]))
+                let next = pending.index(after: i)
+                if next == pending.endIndex { return nil }
+                let line = String(pending[..<i])
+                let removeEnd = pending[next] == "\n" ? pending.index(after: next) : next
+                pending.removeSubrange(pending.startIndex..<removeEnd)
                 return line
             }
-            i = scalars.index(after: i)
+            i = pending.index(after: i)
         }
         return nil
     }

@@ -22,7 +22,14 @@ targets:
     type: application
     platform: iOS
     sources:
-      - App
+      - path: App
+        excludes:
+          - "Resources/**"
+      # 文件夹引用（保留子路径）：art/… 与设计稿 public/ 同构，
+      # particles 三套 p1.png 同名文件靠目录区分，不能拍平成组
+      - path: App/Resources
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: YushiKit
     info:
@@ -33,6 +40,8 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
+        UIAppFonts:
+          - Resources/fonts/LXGWWenKaiScreen.ttf
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.yushi.ios

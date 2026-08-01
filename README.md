@@ -34,10 +34,22 @@ swift test --package-path Core
 ## 批次进度
 
 - [x] 第 1 批：骨架 + 设计令牌 + GatewayClient + 云笺列表 + 只读聊天 + 案头连接设置
+- [x] 第 1.5 批：会话总览页原生化（设计稿 2026-08-01 收官版 1:1 移植）——
+      窗边手账工作室场景 / 三只 pet（随机站位·拖拽·三连跳·专属贴纸）/
+      撕拉拍立得速览卡（掀膜走原生 `UIPageViewController(.pageCurl)`，B6）/
+      陀螺仪视差（CoreMotion，B5）/ 全局音效首版（B12，`tools/gen-assets.mjs` 程序化合成）
 - [ ] 第 2 批：发送 + SSE 流式（Last-Event-ID 续流）+ 过程卡片（思考/工具/引用）+ 审批信封 + Markdown
 - [ ] 第 3 批：群聊（说话人多路复用）
 - [ ] 第 4 批：食帖 / 留声（快捷指令播放）/ 光阴瓶 / 各类表单
 - [ ] 第 5 批：本地通知 / EventKit / 手感打磨
+
+## 第三方资产
+
+- 字体 `App/Resources/fonts/LXGWWenKaiScreen.ttf`（霞鹜文楷屏幕阅读版）：
+  SIL OFL 1.1 授权，许可证随包（同目录 `OFL-LICENSE.txt`）
+- `App/Resources/{art,assets}/` 内 PNG 均为祐祐验收定稿件，
+  与设计稿仓 `sandbox/youshi-home/public/` 逐字节同源；音效与纸纹由
+  `node tools/gen-assets.mjs` 确定性生成，可复现
 
 ## 约定
 
