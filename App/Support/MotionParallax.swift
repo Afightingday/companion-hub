@@ -5,7 +5,8 @@ import Observation
 /// B5：陀螺仪视差。Demo 用指针驱动 --par-x/--par-y ∈ [-1,1]，
 /// 真机改姿态驱动同一对系数：以进入页面时的握持姿态为零点，
 /// 左右倾（roll）→ parX、前后倾（pitch）→ parY，低通滤波去抖。
-/// 2026-08-01 真机反馈「太微小」：打满角收紧 + 各层幅度翻倍（±6…14pt）。
+/// 2026-08-01 真机两轮反馈「太微小」：打满角收紧到 0.30 rad，
+/// 各层幅度两次翻倍到 ±12…28pt（房 -12/-8、logo -28/-20、前景 +20/+16）。
 @Observable
 final class MotionParallax {
     private(set) var parX: CGFloat = 0

@@ -25,6 +25,9 @@ final class AppModel {
 
     var connection: ConnectionState = .unknown
 
+    /// 云笺场景开着速览卡：自绘底栏（YushiTabBar）随之退场让位
+    var homeCardOpen = false
+
     init() {
         gatewayURLString = UserDefaults.standard.string(forKey: Self.urlDefaultsKey) ?? ""
         authToken = Keychain.string(forKey: Self.tokenKeychainKey) ?? ""

@@ -40,7 +40,8 @@ struct HomeSceneView: View {
                 .frame(width: geo.size.width, height: geo.size.height)
         }
         .ignoresSafeArea()
-        .toolbar(openPet != nil ? .hidden : .visible, for: .tabBar)
+        // 底栏改自绘后，开卡收底栏走 AppModel 标记（系统 tabBar 已全局隐藏）
+        .onChange(of: openPet) { appModel.homeCardOpen = openPet != nil }
         .fullScreenCover(item: $chatPet, onDismiss: { Task { await refresh() } }) { key in
             let spec = PET_SPECS.first { $0.key == key } ?? PET_SPECS[0]
             ChatSheetView(spec: spec, contact: contacts[key]) { chatPet = nil }
@@ -77,7 +78,7 @@ struct HomeSceneView: View {
                 .frame(width: SceneTokens.designW + 56, height: SceneTokens.designH + 56)
                 .saturation(0.88)
                 .colorMultiply(Color(white: 0.98))
-                .offset(x: parallax.parX * -6, y: parallax.parY * -4)
+                .offset(x: parallax.parX * -12, y: parallax.parY * -8)
                 .frame(width: SceneTokens.designW, height: SceneTokens.designH)
                 .allowsHitTesting(false)
 
@@ -86,7 +87,7 @@ struct HomeSceneView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 123)
-                .offset(x: 22 + parallax.parX * -14, y: 87 + parallax.parY * -10)
+                .offset(x: 22 + parallax.parX * -28, y: 87 + parallax.parY * -20)
                 .allowsHitTesting(false)
 
             // ── pets：上远下近，拖拽中的压最上 ──
@@ -190,7 +191,7 @@ struct HomeSceneView: View {
                     .offset(x: 66, y: -4 * float)
             }
             .frame(width: SceneTokens.designW, height: SceneTokens.designH, alignment: .bottomLeading)
-            .offset(x: parallax.parX * 10, y: parallax.parY * 8)
+            .offset(x: parallax.parX * 20, y: parallax.parY * 16)
         }
     }
 
