@@ -70,16 +70,18 @@ enum SceneAsset {
     static func image(_ path: String) -> Image { Image(uiImage: uiImage(path)) }
 
     /// 底栏图标：把 512² 手绘原件重采样到指定点尺寸（保纵横比、居中画布）。
+    /// contentScale = 单枚微调系数——五枚画布同尺寸但可见图形占比不一
+    ///（齿轮满方 359²，信纸 359×293），满方的那几枚要打折才显得同大。
     /// 必须 .alwaysOriginal——系统 tab bar 默认按模板染色，会把线条画糊成剪影
-    static func tabIcon(_ path: String, pt: CGFloat) -> UIImage {
-        let key = "tab:\(path)@\(pt)"
+    static func tabIcon(_ path: String, pt: CGFloat, contentScale: CGFloat = 1) -> UIImage {
+        let key = "tab:\(path)@\(pt)x\(contentScale)"
         if let hit = cache[key] { return hit }
         let src = uiImage(path)
         let size = CGSize(width: pt, height: pt)
         let img = UIGraphicsImageRenderer(size: size).image { _ in
             let sw = max(src.size.width, 1)
             let sh = max(src.size.height, 1)
-            let s = min(size.width / sw, size.height / sh)
+            let s = min(size.width / sw, size.height / sh) * contentScale
             let w = sw * s
             let h = sh * s
             src.draw(in: CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h))

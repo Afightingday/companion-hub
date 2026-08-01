@@ -59,10 +59,14 @@ struct RootTabView: View {
         }
     }
 
+    /// 满方图形的单枚缩系数（可见框 alpha 实测：齿轮 359×359 满方，
+    /// 其余为长条形，同缩放下齿轮显壮——五审「案头怎么比别的大」）
+    private static let iconNudge: [String: CGFloat] = ["antou": 0.86]
+
     /// 双态图标：选中=原色原件，未选中=灰化版；46pt（四审「放大到 150%」）
     private func tabIcon(_ name: String, tag: Int) -> Image {
         let art = selection == tag ? "art/tabbar/\(name).png" : "art/tabbar/\(name)-off.png"
-        return Image(uiImage: SceneAsset.tabIcon(art, pt: 46))
+        return Image(uiImage: SceneAsset.tabIcon(art, pt: 46, contentScale: Self.iconNudge[name] ?? 1))
     }
 }
 

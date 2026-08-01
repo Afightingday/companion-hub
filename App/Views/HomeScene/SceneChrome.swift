@@ -4,13 +4,13 @@ import YushiKit
 /// 手账组件（chrome.css 对位）：搜索、墨水瓶羽毛笔。
 /// 底栏/状态栏/Home 条不再自绘——正式版全走系统（SwiftUI TabView + 真机自带）。
 
-// MARK: - 搜索 sheet（B2 第二步，1.9 四审定位）
-// 入口 = 场景老位置的系统玻璃圆钮（HomeSceneView），点开本 sheet：
-// 键盘随 sheet 自动聚焦；结果 = 三只 pet 名字/定位/最近一句本地过滤；
-// 点行收 sheet、回场景开那只的速览卡。
+// MARK: - 搜索幕帘（B2 第三步，1.10 五审定位）
+// 不另起界面：小屋场景原地蒙一层磨砂（fullScreenCover 透明材质底），
+// 结果纸片浮在模糊场景上；输入条贴在键盘上方、唤起即聚焦；
+// 空白处点一下收起（与收卡同语感）。点结果由场景收帘 + 开速览卡。
 
-struct SearchSheetView: View {
-    /// 选中某只：由场景收 sheet + 开卡
+struct SearchVeilView: View {
+    /// 选中某只：由场景收帘 + 开卡
     var onPick: (PetKey) -> Void
 
     @Environment(AppModel.self) private var appModel
@@ -31,47 +31,86 @@ struct SearchSheetView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            List(hits) { spec in
-                Button {
-                    Haptic.softTap()
-                    onPick(spec.key)
-                } label: {
-                    row(spec)
-                }
-                .listRowBackground(Color.clear)
-                .listRowSeparatorTint(SceneTokens.cream500)
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(SceneTokens.paperPage.ignoresSafeArea())
-            .overlay {
-                if hits.isEmpty {
-                    ContentUnavailableView.search(text: query)
-                }
-            }
-            .navigationTitle("寻旧识")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query,
-                        placement: .navigationBarDrawer(displayMode: .always),
-                        prompt: "寻旧识，拾旧话")
-            .searchFocused($fieldFocused)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("收起") { dismiss() }
+        ZStack(alignment: .top) {
+            // 空白处点一下 = 收帘
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { dismiss() }
+
+            ScrollView {
+                VStack(spacing: 9) {
+                    Text("寻旧识")
+                        .font(SceneFont.note(15))
+                        .tracking(2)
                         .foregroundStyle(SceneTokens.ink500)
+                        .padding(.top, 16)
+                        .padding(.bottom, 2)
+                    ForEach(hits) { spec in
+                        Button {
+                            Haptic.softTap()
+                            onPick(spec.key)
+                        } label: {
+                            chip(spec)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if hits.isEmpty {
+                        ContentUnavailableView.search(text: query)
+                            .padding(.top, 60)
+                    }
                 }
+                .padding(.horizontal, 18)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
+        .safeAreaInset(edge: .bottom) { inputBar }
+        .presentationBackground(.ultraThinMaterial)
         .task { await load() }
         .task {
-            // 等 sheet 弹定再聚焦，键盘和转场动画不打架
-            try? await Task.sleep(for: .seconds(0.4))
+            // 随幕帘一起起键盘（迟一拍聚焦，转场不打架）
+            try? await Task.sleep(for: .seconds(0.15))
             fieldFocused = true
         }
     }
 
-    private func row(_ spec: PetSpec) -> some View {
+    /// 原生输入条：贴在键盘上方（safeAreaInset 随键盘抬升）
+    private var inputBar: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(SceneTokens.ink400)
+                TextField("寻旧识，拾旧话", text: $query)
+                    .font(SceneFont.note(15.5))
+                    .focused($fieldFocused)
+                    .submitLabel(.search)
+                    .autocorrectionDisabled()
+                if !query.isEmpty {
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(SceneTokens.ink300)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .background(SceneTokens.paperPage.opacity(0.94), in: Capsule())
+            .overlay(Capsule().strokeBorder(SceneTokens.cream500, lineWidth: 1))
+
+            Button("取消") { dismiss() }
+                .font(SceneFont.note(15))
+                .foregroundStyle(SceneTokens.ink600)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+    }
+
+    /// 结果纸片：浮在模糊小屋上的一枚枚便签
+    private func chip(_ spec: PetSpec) -> some View {
         HStack(spacing: 12) {
             SceneAsset.image(spec.art(.happy))
                 .resizable()
@@ -91,7 +130,13 @@ struct SearchSheetView: View {
                 .font(SceneFont.note(11))
                 .foregroundStyle(SceneTokens.ink300)
         }
-        .padding(.vertical, 5)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 9)
+        .background(SceneTokens.paperPage.opacity(0.88),
+                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+            .strokeBorder(SceneTokens.cream500.opacity(0.9), lineWidth: 1))
+        .shadow(color: SceneTokens.shadowInk.opacity(0.08), radius: 5, y: 3)
         .contentShape(Rectangle())
     }
 

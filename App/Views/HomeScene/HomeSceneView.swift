@@ -42,12 +42,14 @@ struct HomeSceneView: View {
                 .frame(width: geo.size.width, height: geo.size.height)
         }
         .ignoresSafeArea()
-        .toolbar(openPet != nil ? .hidden : .visible, for: .tabBar)
-        .sheet(isPresented: $searchOpen) {
-            SearchSheetView { key in
+        .toolbar(openPet != nil || searchOpen ? .hidden : .visible, for: .tabBar)
+        // 搜索幕帘（1.10 五审）：不另起界面——小屋原地蒙磨砂，结果浮在上面，
+        // 输入条贴键盘。fullScreenCover + 透明材质底 = 视觉是覆层、键盘避让全系统
+        .fullScreenCover(isPresented: $searchOpen) {
+            SearchVeilView { key in
                 searchOpen = false
                 Task { @MainActor in
-                    // 等 sheet 收完再开卡，两段动画不叠打
+                    // 等幕帘收完再开卡，两段动画不叠打
                     try? await Task.sleep(for: .seconds(0.3))
                     openPet = key
                     SoundPlayer.shared.play(.cardOpen)
@@ -149,9 +151,9 @@ struct HomeSceneView: View {
                     searchOpen = true
                 } label: {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 19, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(SceneTokens.ink600)
-                        .frame(width: 52, height: 52)
+                        .frame(width: 40, height: 40)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
