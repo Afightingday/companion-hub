@@ -43,18 +43,21 @@ struct HomeSceneView: View {
         }
         .ignoresSafeArea()
         .toolbar(openPet != nil || searchOpen ? .hidden : .visible, for: .tabBar)
-        // 搜索幕帘（1.10 五审）：不另起界面——小屋原地蒙磨砂，结果浮在上面，
-        // 输入条贴键盘。fullScreenCover + 透明材质底 = 视觉是覆层、键盘避让全系统
+        // 搜索覆层（1.13 七审）：fullScreenCover 只当透明宿主（键盘避让全系统），
+        // 转场由 SearchVeilView 自己画淡入淡出——开合都禁系统上滑转场，
+        // b21「黑色遮罩浮上来」= 系统转场带着压暗层从底部升门帘
         .fullScreenCover(isPresented: $searchOpen) {
             SearchVeilView { key in
-                searchOpen = false
+                dropSearchCover()
                 Task { @MainActor in
-                    // 等幕帘收完再开卡，两段动画不叠打
-                    try? await Task.sleep(for: .seconds(0.3))
+                    // 帘子已自淡出，稍候撤台再开卡，两段动画不叠打
+                    try? await Task.sleep(for: .seconds(0.15))
                     openPet = key
                     SoundPlayer.shared.play(.cardOpen)
                     Haptic.softTap()
                 }
+            } onClose: {
+                dropSearchCover()
             }
         }
         .fullScreenCover(item: $chatPet, onDismiss: { Task { await refresh() } }) { key in
@@ -150,7 +153,9 @@ struct HomeSceneView: View {
                 Color.clear
                 Button {
                     Haptic.softTap()
-                    searchOpen = true
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) { searchOpen = true } // 瞬现，淡入帘子自己画
                 } label: {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 14, weight: .medium))
@@ -247,6 +252,13 @@ struct HomeSceneView: View {
             if !shown.isEmpty { return shown }
         }
         return spec.timeFallback
+    }
+
+    /// 无动画撤搜索 cover（淡出已由 SearchVeilView 画完，系统下滑别再来一遍）
+    private func dropSearchCover() {
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) { searchOpen = false }
     }
 
     @MainActor

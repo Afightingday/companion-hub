@@ -58,19 +58,27 @@ struct RootTabView: View {
     private static let iconNudge: [String: CGFloat] = ["antou": 0.86]
 
     /// 六审定稿：选中=浅鼠尾草绿版(-on)、去文字、图标放大居中；
-    /// 未选中=暖灰版(-off) + 标签
+    /// 未选中=暖灰版(-off) + 标签。
+    /// b21 实机：iOS 26 的 Tab 桥只在建 item 时读一次 label，selection 变了
+    /// label 重算但 item 不刷新——大图标永远停在首次选中的云笺上。修法=给
+    /// label 挂 .id(是否选中)，换身份逼桥当新 label 重建 item（首建路径是
+    /// 验证过能正确渲染的）。若真机仍不刷新，备用梯子：①退回老 .tabItem
+    /// API；②UITabBarController representable 手管 UITabBarItem。
     @ViewBuilder
     private func tabLabel(_ name: String, _ title: String, _ tag: Int) -> some View {
         let nudge = Self.iconNudge[name] ?? 1
-        if selection == tag {
-            Image(uiImage: SceneAsset.tabIcon("art/tabbar/\(name)-on.png", pt: 56, contentScale: nudge))
-        } else {
-            Label {
-                Text(title)
-            } icon: {
-                Image(uiImage: SceneAsset.tabIcon("art/tabbar/\(name)-off.png", pt: 44, contentScale: nudge))
+        Group {
+            if selection == tag {
+                Image(uiImage: SceneAsset.tabIcon("art/tabbar/\(name)-on.png", pt: 56, contentScale: nudge))
+            } else {
+                Label {
+                    Text(title)
+                } icon: {
+                    Image(uiImage: SceneAsset.tabIcon("art/tabbar/\(name)-off.png", pt: 44, contentScale: nudge))
+                }
             }
         }
+        .id(selection == tag)
     }
 }
 

@@ -5,19 +5,24 @@ import YushiKit
 /// 手账组件（chrome.css 对位）：搜索、墨水瓶羽毛笔。
 /// 底栏/状态栏/Home 条不再自绘——正式版全走系统（SwiftUI TabView + 真机自带）。
 
-// MARK: - 搜索玻璃面板（B2 第四步，1.11 六审定位）
-// 场景几乎不糊（只轻压一点暗），搜索装进一块液态玻璃面板浮在键盘上
-//（对位祐祐给的系统「自定义」面板参考）：面板内=结果行 + 原生 UISearchBar。
+// MARK: - 搜索覆层（B2 第五步，1.13 七审定位）
+// 对位系统 Spotlight（祐祐 P2 参考）：结果面板从页面顶部向下按内容自适应
+// 延伸，原生 UISearchBar 独立玻璃胶囊贴键盘上方。玻璃走 .clear 清透档
+//（b21 的 .regular 泛白被点名）；压暗 8% 随内容淡入淡出——系统上滑转场
+// 会带着压暗层从底部升上来（b21「黑色遮罩浮上来」），转场改为自己画。
 // 空白处点一下收起。点结果由场景收帘 + 开速览卡。
 
 struct SearchVeilView: View {
     /// 选中某只：由场景收帘 + 开卡
     var onPick: (PetKey) -> Void
+    /// 收帘：由场景无动画放下 fullScreenCover（淡出已由本视图画完）
+    var onClose: () -> Void
 
     @Environment(AppModel.self) private var appModel
-    @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var contacts: [PetKey: ContactListItem] = [:]
+    /// 自绘转场：内容淡入位（替代系统上滑）
+    @State private var shown = false
 
     private var hits: [PetSpec] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -31,54 +36,82 @@ struct SearchVeilView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // 空白处点一下 = 收帘（场景只轻压暗，不糊）
-            Color.clear
+        ZStack {
+            // 空白处点一下 = 收帘（场景只轻压暗 8%，六审口径不变）
+            Color.black.opacity(shown ? 0.08 : 0)
+                .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture { dismiss() }
+                .onTapGesture { close() }
 
-            panel
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
+            VStack(spacing: 0) {
+                resultsPanel
+                    .opacity(shown ? 1 : 0)
+                    .offset(y: shown ? 0 : -10)
+
+                Spacer(minLength: 12)
+
+                NativeSearchBar(text: $query, placeholder: "寻旧识，拾旧话") {
+                    close()
+                }
+                .frame(height: 48)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .glassEffect(.clear, in: Capsule())
+                .opacity(shown ? 1 : 0)
+                .offset(y: shown ? 0 : 12)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+            .padding(.bottom, 8)
         }
-        .presentationBackground(Color.black.opacity(0.08))
+        .presentationBackground(.clear)
+        .onAppear { withAnimation(.sceneOut(0.26)) { shown = true } }
         .task { await load() }
     }
 
-    /// 液态玻璃面板：结果在上、原生搜索条在下（贴键盘）
-    private var panel: some View {
-        VStack(spacing: 2) {
+    /// 结果面板：清透玻璃，顶部向下按行数自适应（Spotlight 式）
+    private var resultsPanel: some View {
+        VStack(spacing: 0) {
             if hits.isEmpty {
                 Text("没找着，换个词试试")
                     .font(SceneFont.note(13.5))
                     .foregroundStyle(SceneTokens.ink500)
+                    .frame(maxWidth: .infinity)
                     .padding(.vertical, 22)
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(hits.enumerated()), id: \.element.id) { i, spec in
-                        if i > 0 {
-                            Divider().overlay(SceneTokens.cream500.opacity(0.55))
-                        }
-                        Button {
-                            Haptic.softTap()
-                            onPick(spec.key)
-                        } label: {
-                            row(spec)
-                        }
-                        .buttonStyle(.plain)
+                ForEach(Array(hits.enumerated()), id: \.element.id) { i, spec in
+                    if i > 0 {
+                        Divider().overlay(SceneTokens.cream500.opacity(0.55))
                     }
+                    Button {
+                        pick(spec.key)
+                    } label: {
+                        row(spec)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-
-            NativeSearchBar(text: $query, placeholder: "寻旧识，拾旧话") {
-                dismiss()
-            }
-            .frame(height: 52)
         }
         .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(.vertical, 7)
+        .glassEffect(.clear, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+
+    /// 收帘/进卡同一撤场：先放键盘+淡出，再交还场景撤 cover
+    private func pick(_ key: PetKey) {
+        Haptic.softTap()
+        fadeOut { onPick(key) }
+    }
+
+    private func close() {
+        fadeOut { onClose() }
+    }
+
+    private func fadeOut(then done: @escaping () -> Void) {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        withAnimation(.sceneStandard(0.18)) { shown = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { done() }
     }
 
     private func row(_ spec: PetSpec) -> some View {
@@ -138,16 +171,26 @@ struct NativeSearchBar: UIViewRepresentable {
         bar.searchBarStyle = .minimal
         bar.showsCancelButton = true
         bar.delegate = context.coordinator
-        bar.backgroundImage = UIImage() // 面板已是玻璃，不要自带底
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak bar] in
+        bar.backgroundImage = UIImage() // 胶囊已是玻璃，不要自带底
+        // 覆层改瞬现后视图进窗更早，0.15s 首拉；becomeFirstResponder 在视图
+        // 未进窗时会静默失败，0.5s 再补一枪（盲编译不赌单发）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak bar] in
             bar?.becomeFirstResponder()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak bar] in
+            if let bar, !bar.isFirstResponder { bar.becomeFirstResponder() }
         }
         return bar
     }
 
     func updateUIView(_ bar: UISearchBar, context: Context) {
         context.coordinator.parent = self
-        if bar.text != text { bar.text = text }
+        // 拼音组合期间（marked text 未上屏）绝不回写：赋值会当场终止组合、
+        // 把裸拼音字母提交成英文（b21「打拼音变英文」的根因——textDidChange
+        // 写 binding 触发刷新，刷新回写 text 时与下一击键组合态赛跑）
+        if bar.searchTextField.markedTextRange == nil, bar.text != text {
+            bar.text = text
+        }
     }
 
     final class Coordinator: NSObject, UISearchBarDelegate {
@@ -155,6 +198,8 @@ struct NativeSearchBar: UIViewRepresentable {
         init(_ parent: NativeSearchBar) { self.parent = parent }
 
         func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+            // 组合中不上报 binding；候选上屏/组合结束会再回调一次，那时同步
+            guard searchBar.searchTextField.markedTextRange == nil else { return }
             parent.text = searchText
         }
 
