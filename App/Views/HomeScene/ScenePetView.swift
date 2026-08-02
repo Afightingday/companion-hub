@@ -30,7 +30,8 @@ struct ScenePetView: View {
     @State private var pressing = false
     @State private var dragging = false
     @State private var settling = false
-    @State private var winking = false
+    /// 待机脸：从 PET_IDLE_POOL 里随机轮换（六审「五态全接」）
+    @State private var idleFace: PetState = .idle
 
     // 拖拽簿记（起点 + 起始时刻 + 是否已越过 tap 阈值）
     @State private var grabOrigin: CGPoint?
@@ -50,15 +51,14 @@ struct ScenePetView: View {
     @State private var landSX: CGFloat = 1
     @State private var landSY: CGFloat = 1
     @State private var settleTask: Task<Void, Never>?
-    @State private var winkTask: Task<Void, Never>?
+    @State private var shuffleTask: Task<Void, Never>?
 
     private var hasMail: Bool { unread > 0 }
 
     private var visState: PetState {
         if dragging || active { return .happy }
         if hasMail { return .letter }
-        if winking { return .wink }
-        return .idle
+        return idleFace
     }
 
     var body: some View {
@@ -101,13 +101,13 @@ struct ScenePetView: View {
         .onChange(of: pressing) { syncHopTask() }
         .onAppear {
             syncHopTask()
-            startWinkLoop()
+            startIdleShuffle()
         }
         .onDisappear {
             hopTask?.cancel()
             hopTask = nil
-            winkTask?.cancel()
-            winkTask = nil
+            shuffleTask?.cancel()
+            shuffleTask = nil
         }
         .accessibilityLabel("\(spec.name)，\(hasMail ? "有新消息" : "暂无新消息")")
         .accessibilityAddTraits(.isButton)
@@ -125,7 +125,7 @@ struct ScenePetView: View {
                     .opacity(visState == state ? 1 : 0)
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: visState)
+        .animation(.easeInOut(duration: 0.26), value: visState) // 换姿态比眨眼慢半拍
         .scaleEffect(
             x: 1 - 0.012 * breathe,
             y: 1 + 0.02 * breathe,
@@ -320,16 +320,17 @@ struct ScenePetView: View {
         await seg(0.18) { hopY = 0; hopSX = 1; hopSY = 1 }       // 站定
     }
 
-    // MARK: - 眨眼（没信没事干时，隔一阵一次，三只错峰）
+    // MARK: - 待机脸轮换（六审：letter/happy 留语义，其余隔一阵随机换）
 
-    private func startWinkLoop() {
-        winkTask?.cancel()
-        winkTask = Task { @MainActor in
+    private func startIdleShuffle() {
+        shuffleTask?.cancel()
+        shuffleTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5 + spec.phase * 2.3)) // 三只错峰
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(8.2 + spec.phase * 1.7))
-                winking = true
-                try? await Task.sleep(for: .seconds(1.15))
-                winking = false
+                try? await Task.sleep(for: .seconds(Double.random(in: 7...13)))
+                guard !Task.isCancelled else { return }
+                let pool = PET_IDLE_POOL.filter { $0 != idleFace }
+                idleFace = pool.randomElement() ?? .idle
             }
         }
     }

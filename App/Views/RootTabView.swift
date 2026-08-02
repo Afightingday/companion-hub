@@ -12,15 +12,9 @@ import YushiKit
 struct RootTabView: View {
     @State private var selection = 0
 
-    init() {
-        // 四审实验：磨砂开到最厚一档、撤掉暖纱，看系统材质素颜——
-        // 祐祐判断发白未必是磨砂档位的锅，先做单变量对比（浓淡真机定）
-        let ap = UITabBarAppearance()
-        ap.configureWithTransparentBackground()
-        ap.backgroundEffect = UIBlurEffect(style: .systemThickMaterialLight)
-        UITabBar.appearance().standardAppearance = ap
-        UITabBar.appearance().scrollEdgeAppearance = ap
-    }
+    // 五审教训存档：iOS 26 液态玻璃底栏由系统自绘，UITabBarAppearance 的
+    // backgroundEffect/backgroundColor 全被忽略（b18→b19 毫无变化的原因），
+    // 相关代码已拆除；托盘底色目前没有官方接口可调
 
     var body: some View {
         TabView(selection: $selection) {
@@ -29,27 +23,27 @@ struct RootTabView: View {
             Tab(value: 0) {
                 HomeSceneView()
             } label: {
-                Label { Text("云笺") } icon: { tabIcon("yunjian", tag: 0) }
+                tabLabel("yunjian", "云笺", 0)
             }
             Tab(value: 1) {
                 ComingSoonView(title: "游艺", subtitle: "和小家伙们的互动与小游戏 · 规划中", systemImage: "balloon")
             } label: {
-                Label { Text("游艺") } icon: { tabIcon("youyi", tag: 1) }
+                tabLabel("youyi", "游艺", 1)
             }
             Tab(value: 2) {
                 ComingSoonView(title: "食帖", subtitle: "美食档案 · 后续批次搬进来", systemImage: "fork.knife")
             } label: {
-                Label { Text("食帖") } icon: { tabIcon("shitie", tag: 2) }
+                tabLabel("shitie", "食帖", 2)
             }
             Tab(value: 3) {
                 ComingSoonView(title: "留声", subtitle: "一起听音乐 · 后续批次搬进来", systemImage: "music.note")
             } label: {
-                Label { Text("留声") } icon: { tabIcon("liusheng", tag: 3) }
+                tabLabel("liusheng", "留声", 3)
             }
             Tab(value: 4) {
                 AntouView()
             } label: {
-                Label { Text("案头") } icon: { tabIcon("antou", tag: 4) }
+                tabLabel("antou", "案头", 4)
             }
         }
         .tint(SceneTokens.sage700)
@@ -63,10 +57,20 @@ struct RootTabView: View {
     /// 其余为长条形，同缩放下齿轮显壮——五审「案头怎么比别的大」）
     private static let iconNudge: [String: CGFloat] = ["antou": 0.86]
 
-    /// 双态图标：选中=原色原件，未选中=灰化版；46pt（四审「放大到 150%」）
-    private func tabIcon(_ name: String, tag: Int) -> Image {
-        let art = selection == tag ? "art/tabbar/\(name).png" : "art/tabbar/\(name)-off.png"
-        return Image(uiImage: SceneAsset.tabIcon(art, pt: 46, contentScale: Self.iconNudge[name] ?? 1))
+    /// 六审定稿：选中=浅鼠尾草绿版(-on)、去文字、图标放大居中；
+    /// 未选中=暖灰版(-off) + 标签
+    @ViewBuilder
+    private func tabLabel(_ name: String, _ title: String, _ tag: Int) -> some View {
+        let nudge = Self.iconNudge[name] ?? 1
+        if selection == tag {
+            Image(uiImage: SceneAsset.tabIcon("art/tabbar/\(name)-on.png", pt: 56, contentScale: nudge))
+        } else {
+            Label {
+                Text(title)
+            } icon: {
+                Image(uiImage: SceneAsset.tabIcon("art/tabbar/\(name)-off.png", pt: 44, contentScale: nudge))
+            }
+        }
     }
 }
 

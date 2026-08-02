@@ -11,8 +11,12 @@ enum PetKey: String, CaseIterable, Identifiable {
 }
 
 enum PetState: String, CaseIterable {
-    case idle, letter, happy, wink
+    case idle, letter, happy, wink, curious
 }
+
+/// 待机轮换池（六审：letter=举信、happy=拖拽/开卡 两态保留语义，
+/// 其余隔一阵随机换一张）
+let PET_IDLE_POOL: [PetState] = [.idle, .wink, .curious]
 
 struct PetSpec: Identifiable {
     let key: PetKey

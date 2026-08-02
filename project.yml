@@ -37,7 +37,7 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: 雨施流形
+        CFBundleDisplayName: 祐识 # 2026-08-01 六审正式定名（曾用名：雨施流形）
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

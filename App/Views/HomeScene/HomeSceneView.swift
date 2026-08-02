@@ -128,6 +128,8 @@ struct HomeSceneView: View {
                 }
             }
             .frame(width: SceneTokens.designW, height: SceneTokens.designH, alignment: .topLeading)
+            // 人物随地板同步视差（七审：只动场景不动人，看着像人在地板上滑）
+            .offset(x: parallax.parX * -12, y: parallax.parY * -8)
 
             // ── front：纸鹤 + 虚线航迹爱心，压在 pet 之上（DECO 定稿）──
             frontDeco
@@ -151,9 +153,9 @@ struct HomeSceneView: View {
                     searchOpen = true
                 } label: {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(SceneTokens.ink600)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 36, height: 36)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)

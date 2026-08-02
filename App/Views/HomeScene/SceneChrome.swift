@@ -1,13 +1,14 @@
 import SwiftUI
+import UIKit
 import YushiKit
 
 /// 手账组件（chrome.css 对位）：搜索、墨水瓶羽毛笔。
 /// 底栏/状态栏/Home 条不再自绘——正式版全走系统（SwiftUI TabView + 真机自带）。
 
-// MARK: - 搜索幕帘（B2 第三步，1.10 五审定位）
-// 不另起界面：小屋场景原地蒙一层磨砂（fullScreenCover 透明材质底），
-// 结果纸片浮在模糊场景上；输入条贴在键盘上方、唤起即聚焦；
-// 空白处点一下收起（与收卡同语感）。点结果由场景收帘 + 开速览卡。
+// MARK: - 搜索玻璃面板（B2 第四步，1.11 六审定位）
+// 场景几乎不糊（只轻压一点暗），搜索装进一块液态玻璃面板浮在键盘上
+//（对位祐祐给的系统「自定义」面板参考）：面板内=结果行 + 原生 UISearchBar。
+// 空白处点一下收起。点结果由场景收帘 + 开速览卡。
 
 struct SearchVeilView: View {
     /// 选中某只：由场景收帘 + 开卡
@@ -17,7 +18,6 @@ struct SearchVeilView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var contacts: [PetKey: ContactListItem] = [:]
-    @FocusState private var fieldFocused: Bool
 
     private var hits: [PetSpec] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -31,112 +31,78 @@ struct SearchVeilView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // 空白处点一下 = 收帘
+        ZStack(alignment: .bottom) {
+            // 空白处点一下 = 收帘（场景只轻压暗，不糊）
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { dismiss() }
 
-            ScrollView {
-                VStack(spacing: 9) {
-                    Text("寻旧识")
-                        .font(SceneFont.note(15))
-                        .tracking(2)
-                        .foregroundStyle(SceneTokens.ink500)
-                        .padding(.top, 16)
-                        .padding(.bottom, 2)
-                    ForEach(hits) { spec in
+            panel
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+        }
+        .presentationBackground(Color.black.opacity(0.08))
+        .task { await load() }
+    }
+
+    /// 液态玻璃面板：结果在上、原生搜索条在下（贴键盘）
+    private var panel: some View {
+        VStack(spacing: 2) {
+            if hits.isEmpty {
+                Text("没找着，换个词试试")
+                    .font(SceneFont.note(13.5))
+                    .foregroundStyle(SceneTokens.ink500)
+                    .padding(.vertical, 22)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(hits.enumerated()), id: \.element.id) { i, spec in
+                        if i > 0 {
+                            Divider().overlay(SceneTokens.cream500.opacity(0.55))
+                        }
                         Button {
                             Haptic.softTap()
                             onPick(spec.key)
                         } label: {
-                            chip(spec)
+                            row(spec)
                         }
                         .buttonStyle(.plain)
                     }
-                    if hits.isEmpty {
-                        ContentUnavailableView.search(text: query)
-                            .padding(.top, 60)
-                    }
-                }
-                .padding(.horizontal, 18)
-            }
-            .scrollDismissesKeyboard(.interactively)
-        }
-        .safeAreaInset(edge: .bottom) { inputBar }
-        .presentationBackground(.ultraThinMaterial)
-        .task { await load() }
-        .task {
-            // 随幕帘一起起键盘（迟一拍聚焦，转场不打架）
-            try? await Task.sleep(for: .seconds(0.15))
-            fieldFocused = true
-        }
-    }
-
-    /// 原生输入条：贴在键盘上方（safeAreaInset 随键盘抬升）
-    private var inputBar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 7) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(SceneTokens.ink400)
-                TextField("寻旧识，拾旧话", text: $query)
-                    .font(SceneFont.note(15.5))
-                    .focused($fieldFocused)
-                    .submitLabel(.search)
-                    .autocorrectionDisabled()
-                if !query.isEmpty {
-                    Button {
-                        query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(SceneTokens.ink300)
-                    }
-                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 10)
-            .background(SceneTokens.paperPage.opacity(0.94), in: Capsule())
-            .overlay(Capsule().strokeBorder(SceneTokens.cream500, lineWidth: 1))
 
-            Button("取消") { dismiss() }
-                .font(SceneFont.note(15))
-                .foregroundStyle(SceneTokens.ink600)
+            NativeSearchBar(text: $query, placeholder: "寻旧识，拾旧话") {
+                dismiss()
+            }
+            .frame(height: 52)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 10)
         .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.bottom, 6)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
-    /// 结果纸片：浮在模糊小屋上的一枚枚便签
-    private func chip(_ spec: PetSpec) -> some View {
+    private func row(_ spec: PetSpec) -> some View {
         HStack(spacing: 12) {
             SceneAsset.image(spec.art(.happy))
                 .resizable()
                 .scaledToFit()
-                .frame(width: 40, height: 46)
-            VStack(alignment: .leading, spacing: 3) {
+                .frame(width: 36, height: 42)
+            VStack(alignment: .leading, spacing: 2.5) {
                 Text(spec.name)
-                    .font(SceneFont.note(17))
+                    .font(SceneFont.note(16))
                     .foregroundStyle(SceneTokens.ink800)
                 Text(contacts[spec.key]?.lastMessage?.text ?? spec.previewFallback)
-                    .font(.system(size: 13))
-                    .foregroundStyle(SceneTokens.ink400)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(SceneTokens.ink500)
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
             Text(time(spec))
                 .font(SceneFont.note(11))
-                .foregroundStyle(SceneTokens.ink300)
+                .foregroundStyle(SceneTokens.ink400)
         }
-        .padding(.horizontal, 13)
+        .padding(.horizontal, 8)
         .padding(.vertical, 9)
-        .background(SceneTokens.paperPage.opacity(0.88),
-                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
-            .strokeBorder(SceneTokens.cream500.opacity(0.9), lineWidth: 1))
-        .shadow(color: SceneTokens.shadowInk.opacity(0.08), radius: 5, y: 3)
         .contentShape(Rectangle())
     }
 
@@ -153,6 +119,51 @@ struct SearchVeilView: View {
         guard let client = appModel.client else { return }
         if let items = try? await client.listContacts() {
             contacts = PetContactMatch.map(items)
+        }
+    }
+}
+
+/// 苹果原生搜索条（UISearchBar 原件，六审「搜索条可以用原生的吗」）：
+/// 自带放大镜/清空钮/取消钮与全套系统样式，唤起自动聚焦弹键盘
+struct NativeSearchBar: UIViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    var onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UISearchBar {
+        let bar = UISearchBar()
+        bar.placeholder = placeholder
+        bar.searchBarStyle = .minimal
+        bar.showsCancelButton = true
+        bar.delegate = context.coordinator
+        bar.backgroundImage = UIImage() // 面板已是玻璃，不要自带底
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak bar] in
+            bar?.becomeFirstResponder()
+        }
+        return bar
+    }
+
+    func updateUIView(_ bar: UISearchBar, context: Context) {
+        context.coordinator.parent = self
+        if bar.text != text { bar.text = text }
+    }
+
+    final class Coordinator: NSObject, UISearchBarDelegate {
+        var parent: NativeSearchBar
+        init(_ parent: NativeSearchBar) { self.parent = parent }
+
+        func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+            parent.text = searchText
+        }
+
+        func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
+            parent.onCancel()
+        }
+
+        func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+            searchBar.resignFirstResponder()
         }
     }
 }
