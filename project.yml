@@ -50,3 +50,6 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         SWIFT_EMIT_LOC_STRINGS: NO
+        # 正式图标（2026-08-01 祐祐拍板：祐字水墨+藏笑脸，exec-0fecc747 定稿
+        # 1254² 重采样 1024² 无 alpha），单尺寸 appiconset
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
