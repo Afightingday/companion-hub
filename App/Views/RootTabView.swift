@@ -5,80 +5,113 @@ import YushiKit
 /// 五 tab 定稿（2026-08-01 祐祐）：云笺（会话首页）、游艺（Agent 互动、
 /// 小游戏）、食帖（记录美食）、留声（一起听音乐）、案头（个人设置与
 /// Agent 管理）。
-/// 底栏终审口径：苹果原生 tab bar + 系统动画（1.7 自绘胶囊勿回退）；
-/// 图标 = 设计稿手绘线条 PNG 双态：选中原色、未选中灰化版
-///（tools/tint-tabbar.ps1 生成，保笔触）。搜索不占底栏（1.9 四审：
-/// 系统搜索 tab 会把案头挤进 More），玻璃圆钮回场景老位置。
+///
+/// 底栏实现变迁：1.7 自绘胶囊（三审否，勿回退）→ 1.8 系统 TabView →
+/// 1.13(b24) 起 UITabBarController 手管 item（终点站）。原因：iOS 26 的
+/// SwiftUI Tab 桥只在建 item 时读一次 label——selection 变了 label 重算
+/// 但 item 不刷新，b21 裸条件、b23 加 .id 换身份，真机两轮均不动。
+/// UIKit 侧 image/title 是可变属性，delegate 里手改是确定性行为，不再赌桥。
+/// 图标口径不变（六审）：选中=浅鼠尾草绿 -on 56pt 无字居中；
+/// 未选中=-off 44pt+标签；齿轮满方缩 0.86（五审）。液态玻璃 bar 由系统
+/// 自绘，UIKit 结构照拿（背景仍无接口可调，教训同 b19）。
 struct RootTabView: View {
-    @State private var selection = 0
-
-    // 五审教训存档：iOS 26 液态玻璃底栏由系统自绘，UITabBarAppearance 的
-    // backgroundEffect/backgroundColor 全被忽略（b18→b19 毫无变化的原因），
-    // 相关代码已拆除；托盘底色目前没有官方接口可调
+    @Environment(AppModel.self) private var appModel
 
     var body: some View {
-        TabView(selection: $selection) {
-            // 会话总览页（窗边手账工作室）取代微信式列表成为云笺首页；
-            // 旧列表 YunjianView 保留在库里，B2 搜索重设计时再议去留
-            Tab(value: 0) {
-                HomeSceneView()
-            } label: {
-                tabLabel("yunjian", "云笺", 0)
-            }
-            Tab(value: 1) {
-                ComingSoonView(title: "游艺", subtitle: "和小家伙们的互动与小游戏 · 规划中", systemImage: "balloon")
-            } label: {
-                tabLabel("youyi", "游艺", 1)
-            }
-            Tab(value: 2) {
-                ComingSoonView(title: "食帖", subtitle: "美食档案 · 后续批次搬进来", systemImage: "fork.knife")
-            } label: {
-                tabLabel("shitie", "食帖", 2)
-            }
-            Tab(value: 3) {
-                ComingSoonView(title: "留声", subtitle: "一起听音乐 · 后续批次搬进来", systemImage: "music.note")
-            } label: {
-                tabLabel("liusheng", "留声", 3)
-            }
-            Tab(value: 4) {
-                AntouView()
-            } label: {
-                tabLabel("antou", "案头", 4)
-            }
+        NativeTabs(appModel: appModel)
+            .ignoresSafeArea() // representable 吃满窗口，安全区交给 UITabBarController 自己算
+    }
+}
+
+/// tab 清单（顺序=底栏顺序；make 出的根视图会统一补挂 WindowGroup 级修饰）
+private struct TabSpec {
+    let icon: String // Media/art/tabbar/<icon>-{on,off}.png
+    let title: String
+    let nudge: CGFloat
+    let make: () -> AnyView
+}
+
+private let TAB_SPECS: [TabSpec] = [
+    TabSpec(icon: "yunjian", title: "云笺", nudge: 1) { AnyView(HomeSceneView()) },
+    TabSpec(icon: "youyi", title: "游艺", nudge: 1) {
+        AnyView(ComingSoonView(title: "游艺", subtitle: "和小家伙们的互动与小游戏 · 规划中", systemImage: "balloon"))
+    },
+    TabSpec(icon: "shitie", title: "食帖", nudge: 1) {
+        AnyView(ComingSoonView(title: "食帖", subtitle: "美食档案 · 后续批次搬进来", systemImage: "fork.knife"))
+    },
+    TabSpec(icon: "liusheng", title: "留声", nudge: 1) {
+        AnyView(ComingSoonView(title: "留声", subtitle: "一起听音乐 · 后续批次搬进来", systemImage: "music.note"))
+    },
+    TabSpec(icon: "antou", title: "案头", nudge: 0.86) { AnyView(AntouView()) },
+]
+
+/// UIKit 底栏宿主：五个 UIHostingController + delegate 手管双态
+private struct NativeTabs: UIViewControllerRepresentable {
+    let appModel: AppModel
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIViewController(context: Context) -> UITabBarController {
+        let tc = UITabBarController()
+        tc.delegate = context.coordinator
+        // WindowGroup 根上的浅色锁定不进独立 hosting 树，这里在 UIKit 层再锁一次
+        tc.overrideUserInterfaceStyle = .light
+        tc.tabBar.tintColor = UIColor(SceneTokens.sage700)
+        tc.viewControllers = TAB_SPECS.enumerated().map { i, spec in
+            // WindowGroup 级修饰（environment/tint/浅色）对手建 hosting 树要逐棵重挂
+            let root = spec.make()
+                .environment(appModel)
+                .tint(PaperTheme.matchaDeep)
+                .preferredColorScheme(.light)
+            let vc = UIHostingController(rootView: AnyView(root))
+            vc.tabBarItem = UITabBarItem(title: spec.title, image: nil, tag: i)
+            return vc
         }
-        .tint(SceneTokens.sage700)
-        .onChange(of: selection) {
-            SoundPlayer.shared.play(.tabTick) // B12：底栏切页一记笔触点
-            Haptic.softTap()
-        }
+        context.coordinator.applySelection(tc)
+        TabBarChrome.shared.controller = tc
+        return tc
     }
 
-    /// 满方图形的单枚缩系数（可见框 alpha 实测：齿轮 359×359 满方，
-    /// 其余为长条形，同缩放下齿轮显壮——五审「案头怎么比别的大」）
-    private static let iconNudge: [String: CGFloat] = ["antou": 0.86]
+    func updateUIViewController(_ tc: UITabBarController, context: Context) {}
 
-    /// 六审定稿：选中=浅鼠尾草绿版(-on)、去文字、图标放大居中；
-    /// 未选中=暖灰版(-off) + 标签。
-    /// b21 实机：iOS 26 的 Tab 桥只在建 item 时读一次 label，selection 变了
-    /// label 重算但 item 不刷新——大图标永远停在首次选中的云笺上。修法=给
-    /// label 挂 .id(是否选中)，换身份逼桥当新 label 重建 item（首建路径是
-    /// 验证过能正确渲染的）。若真机仍不刷新，备用梯子：①退回老 .tabItem
-    /// API；②UITabBarController representable 手管 UITabBarItem。
-    @ViewBuilder
-    private func tabLabel(_ name: String, _ title: String, _ tag: Int) -> some View {
-        let nudge = Self.iconNudge[name] ?? 1
-        Group {
-            if selection == tag {
-                Image(uiImage: SceneAsset.tabIcon("art/tabbar/\(name)-on.png", pt: 56, contentScale: nudge))
-            } else {
-                Label {
-                    Text(title)
-                } icon: {
-                    Image(uiImage: SceneAsset.tabIcon("art/tabbar/\(name)-off.png", pt: 44, contentScale: nudge))
-                }
+    final class Coordinator: NSObject, UITabBarControllerDelegate {
+        private var lastIndex = 0
+
+        func tabBarController(_ tc: UITabBarController, didSelect viewController: UIViewController) {
+            if tc.selectedIndex != lastIndex {
+                lastIndex = tc.selectedIndex
+                SoundPlayer.shared.play(.tabTick) // B12：底栏切页一记笔触点
+                Haptic.softTap()
+            }
+            applySelection(tc)
+        }
+
+        /// 双态落位：选中=on56 去题（无题 item 图标才会竖直居中），其余=off44+题
+        func applySelection(_ tc: UITabBarController) {
+            guard let vcs = tc.viewControllers else { return }
+            for (i, vc) in vcs.enumerated() {
+                let spec = TAB_SPECS[i]
+                let selected = i == tc.selectedIndex
+                vc.tabBarItem.image = SceneAsset.tabIcon(
+                    "art/tabbar/\(spec.icon)-\(selected ? "on" : "off").png",
+                    pt: selected ? 56 : 44,
+                    contentScale: spec.nudge)
+                vc.tabBarItem.title = selected ? nil : spec.title
             }
         }
-        .id(selection == tag)
+    }
+}
+
+/// 收/放底栏的庄家线：UIKit 结构里 SwiftUI 的 .toolbar(_, for: .tabBar)
+/// 失效（要 TabView 祖先），开卡/搜索时 HomeSceneView 走这里
+@MainActor
+final class TabBarChrome {
+    static let shared = TabBarChrome()
+    weak var controller: UITabBarController?
+
+    func setHidden(_ hidden: Bool, animated: Bool = true) {
+        guard let tc = controller, tc.isTabBarHidden != hidden else { return }
+        tc.setTabBarHidden(hidden, animated: animated)
     }
 }
 

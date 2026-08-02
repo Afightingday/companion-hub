@@ -42,7 +42,11 @@ struct HomeSceneView: View {
                 .frame(width: geo.size.width, height: geo.size.height)
         }
         .ignoresSafeArea()
-        .toolbar(openPet != nil || searchOpen ? .hidden : .visible, for: .tabBar)
+        // 开卡/搜索时收底栏。1.13 起底栏是 UITabBarController（RootTabView），
+        // SwiftUI 的 .toolbar(_, for: .tabBar) 在 hosting 子树里失效，走庄家线
+        .onChange(of: openPet != nil || searchOpen) { _, hidden in
+            TabBarChrome.shared.setHidden(hidden)
+        }
         // 搜索覆层（1.13 七审）：fullScreenCover 只当透明宿主（键盘避让全系统），
         // 转场由 SearchVeilView 自己画淡入淡出——开合都禁系统上滑转场，
         // b21「黑色遮罩浮上来」= 系统转场带着压暗层从底部升门帘

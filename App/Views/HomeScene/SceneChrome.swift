@@ -50,13 +50,13 @@ struct SearchVeilView: View {
 
                 Spacer(minLength: 12)
 
-                NativeSearchBar(text: $query, placeholder: "寻旧识，拾旧话") {
+                // 七审+1（b23 反馈）：输入条裸用系统原件——外包的玻璃胶囊
+                // 和占位文字都撤（「就用苹果搜索栏固定的那个条」），
+                // 结果面板保持不动（已过审 🥰）
+                NativeSearchBar(text: $query, placeholder: "") {
                     close()
                 }
-                .frame(height: 48)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .glassEffect(.clear, in: Capsule())
+                .frame(height: 52)
                 .opacity(shown ? 1 : 0)
                 .offset(y: shown ? 0 : 12)
             }

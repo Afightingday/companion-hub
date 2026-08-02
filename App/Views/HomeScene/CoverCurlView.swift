@@ -104,6 +104,14 @@ struct CoverCurlView: UIViewControllerRepresentable {
             } else if !completed {
                 filmState.hintHidden = false
                 parent.onCancelled()
+                // b23 真机：掀一半松手（转场取消）后，pageCurl 内部翻页缓存
+                // 会楔死——之后怎么拖都翻不动。把当前页原样重设一遍逼它
+                // 重建缓存即可复活；不能在回调栈里同步做，UIKit 会闹
+                let face = pages[0]
+                DispatchQueue.main.async { [weak pageViewController] in
+                    pageViewController?.setViewControllers(
+                        [face], direction: .forward, animated: false)
+                }
             }
         }
     }
