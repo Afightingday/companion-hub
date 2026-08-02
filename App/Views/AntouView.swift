@@ -38,14 +38,13 @@ struct AntouView: View {
                 }
 
                 Section("迁移进度") {
-                    LabeledContent("这一批", value: "云笺 + 只读聊天")
-                    LabeledContent("第 2 批", value: "发送 · SSE 流式 · 过程卡片")
+                    LabeledContent("这一批", value: "聊天核心：发送 · 流式 · 过程行 · 审批卡")
                     LabeledContent("第 3 批", value: "群聊")
                     LabeledContent("第 4 批", value: "食帖 · 留声 · 光阴瓶")
                 }
 
                 Section("版本") {
-                    LabeledContent("App", value: "0.1.0（第 1 批骨架）")
+                    LabeledContent("App", value: "0.2.0（第 2 批聊天核心）")
                 }
             }
             .scrollContentBackground(.hidden)

@@ -57,13 +57,36 @@ final class SSEParserTests: XCTestCase {
     }
 
     func testGatewayShapedStream() {
-        // 模拟网关真实形状：id + JSON data
+        // 网关真实形状（chat.ts:159，2026-08-02 真机 SSE 抓包核对）：
+        // data 行是 TurnEventEnvelope 信封 {"id":N,"turnId":"…","event":{…}}，不是裸事件
         var parser = SSEParser()
-        let chunk = "id: 7\ndata: {\"type\":\"text_delta\",\"text\":\"晚\"}\n\nid: 8\ndata: {\"type\":\"completed\"}\n\n"
+        let chunk = "retry: 2000\n\n"
+            + "id: 7\ndata: {\"id\":7,\"turnId\":\"t-1\",\"event\":{\"type\":\"text_delta\",\"text\":\"晚\"}}\n\n"
+            + "id: 8\ndata: {\"id\":8,\"turnId\":\"t-1\",\"event\":{\"type\":\"completed\"}}\n\n"
         let events = parser.feed(chunk)
         XCTAssertEqual(events.count, 2)
-        XCTAssertEqual(ProviderEvent.decode(sseData: events[0].data), .textDelta("晚"))
-        XCTAssertEqual(ProviderEvent.decode(sseData: events[1].data), .completed)
+        let first = TurnEventEnvelope.decode(sseData: events[0].data)
+        XCTAssertEqual(first?.id, 7)
+        XCTAssertEqual(first?.turnId, "t-1")
+        XCTAssertEqual(first?.event, .textDelta("晚"))
+        XCTAssertEqual(TurnEventEnvelope.decode(sseData: events[1].data)?.event, .completed)
         XCTAssertEqual(parser.lastEventId, "8")
+    }
+
+    func testEnvelopeKeepsUnknownInnerEventAsRaw() {
+        // 信封外层合法 + 内层未知事件 → 兜成 .raw，整流不断（R2）
+        let env = TurnEventEnvelope.decode(
+            sseData: "{\"id\":3,\"turnId\":\"t-1\",\"event\":{\"type\":\"holo_projection\",\"x\":1}}"
+        )
+        if case .raw = env?.event {} else {
+            XCTFail("未知内层事件应兜成 raw，实际：\(String(describing: env?.event))")
+        }
+    }
+
+    func testGoneFrameSurfacesEventName() {
+        // turn 已被网关清理：event: gone 帧要能按事件名识别（回落拉历史的信号）
+        var parser = SSEParser()
+        let events = parser.feed("event: gone\ndata: {\"turnId\":\"t-9\"}\n\n")
+        XCTAssertEqual(events.first?.event, "gone")
     }
 }

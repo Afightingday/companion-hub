@@ -104,6 +104,14 @@ public struct ApiMessage: Codable, Identifiable, Sendable, Equatable {
     public var isUser: Bool { author == "user" }
 }
 
+/// POST /api/conversations/:id/messages 的 202 响应。
+/// assistantMessageId：zod schema 未声明但单聊实返（turn.ts:65）、群聊必无——按可空建模。
+public struct SendMessageResponse: Codable, Sendable, Equatable {
+    public var userMessageId: String
+    public var turnId: String
+    public var assistantMessageId: String?
+}
+
 public struct ConversationSnapshot: Codable, Sendable, Equatable {
     public var conversationId: String
     public var contact: ContactConfig

@@ -39,6 +39,14 @@ private struct ErrorBody: Decodable {
     let error: String?
 }
 private struct EmptyBody: Encodable {}
+private struct SendMessageBody: Encodable {
+    let text: String
+    let replyTo: String?
+}
+private struct ApprovalDecisionBody: Encodable {
+    /// "approve" | "deny"
+    let decision: String
+}
 
 /// 网关 HTTP 客户端（端点与 apps/web/src/lib/api.ts 一一对应）。
 /// 鉴权：Authorization: Bearer <AUTH_TOKEN>（server.ts 也接受 ?token= 供 SSE 用）。
@@ -91,6 +99,28 @@ public final class GatewayClient: @unchecked Sendable {
 
     public func markRead(conversationId: String) async throws {
         let _: OkResponse = try await post("/api/conversations/\(conversationId)/read", body: EmptyBody())
+    }
+
+    /// 发消息 → 202 {turnId, userMessageId, assistantMessageId?}，随后凭 turnId 订 SSE
+    public func sendMessage(
+        conversationId: String,
+        text: String,
+        replyTo: String? = nil
+    ) async throws -> SendMessageResponse {
+        try await post(
+            "/api/conversations/\(conversationId)/messages",
+            body: SendMessageBody(text: text, replyTo: replyTo)
+        )
+    }
+
+    /// 停止生成（流内会收到 error{code:"aborted"} 收尾帧）
+    public func abortTurn(turnId: String) async throws {
+        let _: OkResponse = try await post("/api/turns/\(turnId)/abort", body: EmptyBody())
+    }
+
+    /// 审批裁决；410 = 已超时/已处理（approval_gone）
+    public func decideApproval(approvalId: String, decision: String) async throws {
+        let _: OkResponse = try await post("/api/approvals/\(approvalId)", body: ApprovalDecisionBody(decision: decision))
     }
 
     // MARK: - 基础设施

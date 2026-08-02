@@ -174,9 +174,40 @@ extension ProviderEvent: Codable {
 }
 
 public extension ProviderEvent {
-    /// SSE 的 data 行 → 事件。整段 JSON 都坏才返回 nil（由聊天层决定怎么提示）。
+    /// 裸事件 JSON → 事件（注意：网关 SSE 的 data 行不是裸事件，是 TurnEventEnvelope 信封——
+    /// 聊天层请走 `TurnEventEnvelope.decode(sseData:)`；本方法只用于解信封内层或测试）。
     static func decode(sseData: String, decoder: JSONDecoder = JSONDecoder()) -> ProviderEvent? {
         guard let data = sseData.data(using: .utf8) else { return nil }
         return try? decoder.decode(ProviderEvent.self, from: data)
+    }
+
+    /// 网关自造控制信号：审批决议广播（turn.ts 以 raw{payload.approvalResolved:{id,decision}} 发出，
+    /// 归约前要先拦截分流——apps/web/src/pages/Chat.tsx 同规则）
+    var approvalResolved: (id: String, decision: String)? {
+        guard case .raw(_, let payload) = self,
+              let obj = payload?["approvalResolved"],
+              let id = obj["id"]?.stringValue,
+              let decision = obj["decision"]?.stringValue else { return nil }
+        return (id, decision)
+    }
+}
+
+/// SSE data 行的真实形状（packages/shared/src/api.ts TurnEventEnvelope 的镜像）：
+/// `{"id":7,"turnId":"…","event":{…ProviderEvent…}}`，id 单调递增供 Last-Event-ID 续传。
+public struct TurnEventEnvelope: Codable, Sendable, Equatable {
+    public var id: Int
+    public var turnId: String
+    public var event: ProviderEvent
+
+    public init(id: Int, turnId: String, event: ProviderEvent) {
+        self.id = id
+        self.turnId = turnId
+        self.event = event
+    }
+
+    /// SSE 的 data 行 → 信封。整段 JSON 坏才返回 nil（内层未知事件由 ProviderEvent 兜成 .raw，不丢）。
+    public static func decode(sseData: String, decoder: JSONDecoder = JSONDecoder()) -> TurnEventEnvelope? {
+        guard let data = sseData.data(using: .utf8) else { return nil }
+        return try? decoder.decode(TurnEventEnvelope.self, from: data)
     }
 }

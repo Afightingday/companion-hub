@@ -38,7 +38,11 @@ swift test --package-path Core
       窗边手账工作室场景 / 三只 pet（随机站位·拖拽·三连跳·专属贴纸）/
       撕拉拍立得速览卡（掀膜走原生 `UIPageViewController(.pageCurl)`，B6）/
       陀螺仪视差（CoreMotion，B5）/ 全局音效首版（B12，`tools/gen-assets.mjs` 程序化合成）
-- [ ] 第 2 批：发送 + SSE 流式（Last-Event-ID 续流）+ 过程卡片（思考/工具/引用）+ 审批信封 + Markdown
+- [x] 第 2 批（2026-08-02）：聊天核心 —— 发送（乐观气泡）+ SSE 流式（TurnEventEnvelope 信封 +
+      Last-Event-ID 续流 + 掉线重连 + gone 回落拉历史）+ 事件归约器（Core/ChatReducer，
+      对位 web applyEvent.ts）+ 思考/工具 TraceLine 行 + 审批纸卡 + 停止生成 + 行内 Markdown。
+      同批网关侧：Codex adapter 迁 app-server v2（0.145.0 真机校准，thread 持久化进 KV）；
+      Claude 底稿/补丁填实（tidal-echo 素材库改写）。信封动效与全量 Markdown 后续批次打磨
 - [ ] 第 3 批：群聊（说话人多路复用）
 - [ ] 第 4 批：食帖 / 留声（快捷指令播放）/ 光阴瓶 / 各类表单
 - [ ] 第 5 批：本地通知 / EventKit / 手感打磨
