@@ -49,10 +49,16 @@ private let TAB_SPECS: [TabSpec] = [
 private struct NativeTabs: UIViewControllerRepresentable {
     let appModel: AppModel
 
+    /// 44pt 未选中图标+标题在稳定态排得下（十审截图实证：选中过一次的
+    /// item 图文位置全对），别再动尺寸——首启偏下是首排版式的问题，
+    /// 由 ReflowingTabBarController 亮相后重排解决
+    static let offPt: CGFloat = 44
+    static let onPt: CGFloat = 56
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIViewController(context: Context) -> UITabBarController {
-        let tc = UITabBarController()
+        let tc = ReflowingTabBarController()
         tc.delegate = context.coordinator
         // WindowGroup 根上的浅色锁定不进独立 hosting 树，这里在 UIKit 层再锁一次
         tc.overrideUserInterfaceStyle = .light
@@ -70,7 +76,7 @@ private struct NativeTabs: UIViewControllerRepresentable {
             vc.tabBarItem = UITabBarItem(
                 title: spec.title,
                 image: SceneAsset.tabIcon(
-                    "art/tabbar/\(spec.icon)-off.png", pt: 44, contentScale: spec.nudge),
+                    "art/tabbar/\(spec.icon)-off.png", pt: Self.offPt, contentScale: spec.nudge),
                 tag: i)
             return vc
         }
@@ -94,7 +100,7 @@ private struct NativeTabs: UIViewControllerRepresentable {
             applySelection(tc)
         }
 
-        /// 双态落位：选中=on56 去题（无题 item 图标才会竖直居中），其余=off44+题
+        /// 双态落位：选中=on56 去题（无题 item 图标才会竖直居中），其余=off30+题
         func applySelection(_ tc: UITabBarController) {
             guard let vcs = tc.viewControllers else { return }
             for (i, vc) in vcs.enumerated() {
@@ -102,10 +108,36 @@ private struct NativeTabs: UIViewControllerRepresentable {
                 let selected = i == tc.selectedIndex
                 vc.tabBarItem.image = SceneAsset.tabIcon(
                     "art/tabbar/\(spec.icon)-\(selected ? "on" : "off").png",
-                    pt: selected ? 56 : 44,
+                    pt: selected ? NativeTabs.onPt : NativeTabs.offPt,
                     contentScale: spec.nudge)
                 vc.tabBarItem.title = selected ? nil : spec.title
             }
+        }
+    }
+}
+
+/// 首启标题偏下的终治（b25/b26 两轮实证 + 十审截图定案）：
+/// 液态玻璃 bar 首次亮相前排的 item 版式会把标题压出栏框，44pt 图标
+/// 本身无罪——同一 item 只要 image 实例真变更过一次（即被选中过），
+/// 重排后图文全对。applySelection 对未动过的 item 重设的是同一缓存
+/// 实例+同串标题，UIKit 短路不触发重排。于是亮相后把每个 item 的
+/// 图和题摘下再装回（同一 runloop 内完成，无可见闪动），逼全员
+/// 重走一遍稳定态版式。
+final class ReflowingTabBarController: UITabBarController {
+    private var reflowed = false
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !reflowed else { return }
+        reflowed = true
+        for vc in viewControllers ?? [] {
+            let item = vc.tabBarItem
+            let image = item?.image
+            let title = item?.title
+            item?.image = nil
+            item?.title = nil
+            item?.image = image
+            item?.title = title
         }
     }
 }
