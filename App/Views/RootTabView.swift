@@ -64,10 +64,18 @@ private struct NativeTabs: UIViewControllerRepresentable {
                 .tint(PaperTheme.matchaDeep)
                 .preferredColorScheme(.light)
             let vc = UIHostingController(rootView: AnyView(root))
-            vc.tabBarItem = UITabBarItem(title: spec.title, image: nil, tag: i)
+            // 首建 item 图文必须一次到位：先 nil 图后补图，UIKit 会按
+            // 纯文字 item 排首版布局（标题偏下超框），切一次选中才重排
+            //（b25 真机实证）
+            vc.tabBarItem = UITabBarItem(
+                title: spec.title,
+                image: SceneAsset.tabIcon(
+                    "art/tabbar/\(spec.icon)-off.png", pt: 44, contentScale: spec.nudge),
+                tag: i)
             return vc
         }
         context.coordinator.applySelection(tc)
+        tc.tabBar.setNeedsLayout() // 选中位换 56pt 大图标后立刻重排，不等切页
         TabBarChrome.shared.controller = tc
         return tc
     }

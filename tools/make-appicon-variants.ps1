@@ -14,6 +14,7 @@ Add-Type -AssemblyName System.Drawing
 $dir = Join-Path $PSScriptRoot "..\App\Assets.xcassets\AppIcon.appiconset"
 $srcPath = Join-Path $PSScriptRoot "appicon-master.png"
 $inkBg = @(38, 42, 36) # #262A24 墨玉底（九审预览同款，所见即所得）
+$zoom = 1.10    # 九审：字形放大占满、边缘留白收窄（中心放大裁边）
 $lumHi = 240.0  # 亮过此值=纯纸底，全透
 $lumLo = 95.0   # 暗过此值=浓墨，全实
 
@@ -27,7 +28,17 @@ function Save-Png($bytes, $w, $h, $fmt, $out) {
     $dst.Dispose()
 }
 
-$src = [System.Drawing.Bitmap]::new($srcPath)
+$raw = [System.Drawing.Bitmap]::new($srcPath)
+# 中心放大 $zoom 倍再裁回原框（master 四周是纸底，裁掉的只有留白）
+$src = [System.Drawing.Bitmap]::new($raw.Width, $raw.Height, 'Format32bppArgb')
+$gz = [System.Drawing.Graphics]::FromImage($src)
+$gz.InterpolationMode = 'HighQualityBicubic'
+$gz.PixelOffsetMode = 'HighQuality'
+$pad = [int][Math]::Round($raw.Width * ($zoom - 1) / 2)
+$gz.DrawImage($raw, [System.Drawing.Rectangle]::new(
+    -$pad, -$pad,
+    [int][Math]::Round($raw.Width * $zoom), [int][Math]::Round($raw.Height * $zoom)))
+$gz.Dispose(); $raw.Dispose()
 $w = $src.Width; $h = $src.Height
 $rect = [System.Drawing.Rectangle]::new(0, 0, $w, $h)
 $data = $src.LockBits($rect, 'ReadOnly', 'Format32bppArgb')

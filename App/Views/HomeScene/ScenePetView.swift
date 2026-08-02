@@ -56,8 +56,11 @@ struct ScenePetView: View {
     private var hasMail: Bool { unread > 0 }
 
     private var visState: PetState {
-        if dragging || active { return .happy }
-        if hasMail { return .letter }
+        if dragging { return .happy }
+        // 九审：开卡=举信递话（三只一致）。曾用 happy——Claude 那张是
+        // 单腿站姿，未读没清时跳跳还在跑，单脚跳滑稽；举信+跳本就是
+        // 有信的标准动作，不违和
+        if active || hasMail { return .letter }
         return idleFace
     }
 
