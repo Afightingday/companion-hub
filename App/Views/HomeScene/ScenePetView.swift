@@ -107,8 +107,7 @@ struct ScenePetView: View {
             startIdleShuffle()
         }
         .onDisappear {
-            hopTask?.cancel()
-            hopTask = nil
+            stopHop(animated: false) // 离场也得复位，别把落地压扁帧带回下次亮相
             shuffleTask?.cancel()
             shuffleTask = nil
         }
@@ -272,18 +271,34 @@ struct ScenePetView: View {
     private func syncHopTask() {
         // 手一按住（pressing）就停跳：别等越过拖拽阈值才打断半空的那一跳
         let shouldHop = hasMail && !dragging && !pressing
-        if shouldHop && hopTask == nil {
-            hopTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(spec.phase)) // 三只错峰
-                while !Task.isCancelled {
-                    await hopCycle()
-                }
-            }
-        } else if !shouldHop, let task = hopTask {
-            task.cancel()
-            hopTask = nil
-            withAnimation(.sceneOut(0.15)) { hopY = 0; hopSX = 1; hopSY = 1 }
+        guard shouldHop else {
+            stopHop()
+            return
         }
+        guard hopTask == nil else { return }
+        hopTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(spec.phase)) // 三只错峰
+            while !Task.isCancelled {
+                await hopCycle()
+            }
+        }
+    }
+
+    /// 停跳 = 取消 + 跳跳层复位，两件事必须绑死。
+    /// 复位曾挂在「hopTask 非空」的分支上，而 onDisappear（切 tab、开聊天
+    /// fullScreenCover）先把 task 取消置了 nil 又不复位：若此刻正停在落地
+    /// 压扁帧（sY 0.84~0.88，全周期占四分之一强），回页后要么扁着干等
+    /// phase+1.8s 到下一轮才被救回，要么这中间信已读、hasMail 转 false——
+    /// 两个分支都不进，小人就永久扁着（2026-08-03 Claude 实证）
+    private func stopHop(animated: Bool = true) {
+        hopTask?.cancel()
+        hopTask = nil
+        guard hopY != 0 || hopSX != 1 || hopSY != 1 else { return }
+        guard animated else {
+            hopY = 0; hopSX = 1; hopSY = 1
+            return
+        }
+        withAnimation(.sceneOut(0.15)) { hopY = 0; hopSX = 1; hopSY = 1 }
     }
 
     @MainActor
