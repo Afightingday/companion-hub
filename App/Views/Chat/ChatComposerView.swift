@@ -102,6 +102,7 @@ struct ChatComposerView: View {
             ChatWashiTape(color: ChatPaperPalette.goldWash, width: 48)
                 .offset(x: 30, y: -6)
         }
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 13)
         .padding(.top, 13)
         .padding(.bottom, 7)
