@@ -9,7 +9,7 @@ enum ChatMessageAction {
 /// 一条消息的一行。
 /// 你的话＝一圈 2px 虚线，不填色；祐识那边的话不进任何容器，正文直接落在纸上。
 /// 时间**完全不进流**：整点浮动胶囊是唯一的时间线索（不做左拖露时间）。
-/// 送达状态也不写字，只用图标 + 动效交代。
+/// 送达状态只报**失败**，而且不写字只给图标 —— 寄出中什么都不显示。
 struct ChatMessageRow: View {
     let message: UiMessage
     let selecting: Bool
@@ -43,11 +43,8 @@ struct ChatMessageRow: View {
 
     private var userBubble: some View {
         HStack(alignment: .center, spacing: 9) {
-            // 寄出中的小圈挂在气泡左边——挂右边会把气泡顶得跳一下
-            if message.status == .sending {
-                ChatSendingMark()
-            }
-
+            // 寄出中**什么都不显示**：从点发送到出字都是「在等模型」，
+            // 拆成几个阶段报给用户没有意义（祐祐 2026-08-04）。只有失败才需要出面。
             Text(message.text)
                 .font(.system(size: 17))
                 .lineSpacing(17 * 0.3)
@@ -159,28 +156,6 @@ struct ChatSelectBox: View {
         }
         .buttonStyle(.plain)
         .transition(.opacity)
-    }
-}
-
-/// 寄出中：一圈虚线慢慢转 —— 不写「寄出中」三个字。
-/// 用虚线是因为它是整套设计里表示「还没坐实」的通用语汇。
-struct ChatSendingMark: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var spin = false
-
-    var body: some View {
-        Circle()
-            .strokeBorder(YY.ink300, style: StrokeStyle(lineWidth: 1.4, dash: [3.2, 3.6]))
-            .frame(width: 15, height: 15)
-            .rotationEffect(.degrees(spin ? 360 : 0))
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.linear(duration: 2.2).repeatForever(autoreverses: false)) {
-                    spin = true
-                }
-            }
-            .transition(.opacity.combined(with: .scale(scale: 0.6)))
-            .accessibilityLabel("寄出中")
     }
 }
 
