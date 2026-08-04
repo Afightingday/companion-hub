@@ -66,11 +66,11 @@ struct ChatApprovalCard: View {
                     ForEach(Array(metaLines.enumerated()), id: \.offset) { _, line in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Image(systemName: line.icon)
-                                .font(.system(size: 14))
-                                .foregroundStyle(danger ? YY.rose500 : YY.sage600)
-                                .frame(width: 17)
-                            Text(line.text)
                                 .font(.system(size: 15))
+                                .foregroundStyle(danger ? YY.rose500 : YY.sage600)
+                                .frame(width: 19)
+                            Text(line.text)
+                                .font(.system(size: 16.5))
                                 .foregroundStyle(YY.ink700)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -92,10 +92,10 @@ struct ChatApprovalCard: View {
 
             HStack(spacing: 9) {
                 Image(systemName: danger ? "exclamationmark.circle" : "heart.fill")
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                     .foregroundStyle(danger ? YY.danger : YY.rose500)
                 Text(danger ? "确认后不可恢复" : "需要你点个头")
-                    .font(.system(size: 15))
+                    .font(.system(size: 16.5))
                     .foregroundStyle(YY.ink700)
             }
             .padding(.top, 14)
@@ -107,15 +107,15 @@ struct ChatApprovalCard: View {
                 onDecide(request.id, "deny")
             } label: {
                 Text("先不了")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(YY.ink400)
                     .overlay(alignment: .bottom) {
                         Path { p in
                             p.move(to: .zero)
-                            p.addLine(to: CGPoint(x: 42, y: 0))
+                            p.addLine(to: CGPoint(x: 47, y: 0))
                         }
                         .stroke(YY.cream600, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
-                        .frame(width: 42, height: 1.5)
+                        .frame(width: 47, height: 1.5)
                         .offset(y: 5)
                     }
             }
@@ -186,8 +186,8 @@ struct ChatApprovalCard: View {
                     }
             }
             Text(danger ? "确认删除" : "盖章批准")
-                .font(.system(size: 11, weight: .bold))
-                .tracking(1.54)
+                .font(.system(size: 12, weight: .bold))
+                .tracking(1.5)
                 .foregroundStyle(accent)
         }
         .padding(.trailing, 18)
@@ -227,15 +227,15 @@ struct ChatApprovalCard: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(request.title)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 17.5, weight: .bold))
                     .foregroundStyle(YY.ink800)
                     .lineLimit(2)
                 HStack(spacing: 5) {
                     Image(systemName: approved ? "checkmark" : "xmark")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                     Text(approved ? "已记入" : "没有寄出")
                 }
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(YY.ink400)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

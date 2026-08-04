@@ -5,9 +5,9 @@ import YushiKit
 /// 单 Agent 会话页 —— 对位设计稿「Agent 对话页 v2」。
 ///
 /// 三条骨架：
-/// 1. 顶栏浮在纸上、不带底色，常态 / 搜索 / 多选三副长相原位互换；
+/// 1. 顶栏与输入胶囊都**浮**在纸上（下面不垫衬底），玻璃走系统原生液态玻璃；
 /// 2. 消息不进容器 —— 你的话一圈虚线，祐识那边的话直接落在纸上；
-/// 3. 时间与日期都不占版面：日戳滚动时浮现，单条时间要左拖才露出来。
+/// 3. 时间不占版面：滚动时浮一枚**整点**胶囊，没有左拖露时间那套。
 struct ChatScreen: View {
     let item: ContactListItem
     /// 宿主自己管返回时传进来（如首页的 fullScreenCover）；不传就退出当前呈现
@@ -38,18 +38,18 @@ struct ChatScreen: View {
 
     // 版面
     @State private var headerHeight: CGFloat = 108
+    @State private var dockHeight: CGFloat = 76
     @State private var scrollPos = ScrollPosition(edge: .bottom)
-    @State private var dragX: CGFloat = 0
-    @State private var dayLabel = ""
-    @State private var dayVisible = false
-    @State private var dayTask: Task<Void, Never>?
+    @State private var timeLabel = ""
+    @State private var timeVisible = false
+    @State private var timeTask: Task<Void, Never>?
     @State private var toast: String?
     @State private var toastTask: Task<Void, Never>?
     @State private var versionIndex: [String: Int] = [:]
     @State private var highlighted: String?
-    /// 日界锚点存在一个普通对象里，**不是 @State 值**——
+    /// 整点锚存在一个普通对象里，**不是 @State 值**——
     /// 滚动时 y 每帧都在变，写进 @State 会每帧重建 body，白烧一整页的布局。
-    @State private var dayAnchors = ChatDayAnchors()
+    @State private var timeAnchors = ChatTimeAnchors()
 
     private let seeds = ["明早提醒我去河边", "这周我都干了什么", "把妈妈的腌菜方子记下来"]
 
@@ -62,22 +62,18 @@ struct ChatScreen: View {
 
             thread
                 .overlay(alignment: .top) {
-                    ChatDayPill(label: dayLabel, visible: dayVisible && mode == .idle)
-                        .padding(.top, max(0, headerHeight - 30))
+                    ChatTimePill(label: timeLabel, visible: timeVisible && mode != .select)
+                        .padding(.top, max(0, headerHeight - 34))
                 }
 
             ChatHeaderBar(
                 mode: $mode,
                 name: $name,
-                query: $query,
                 offline: !network.isOnline,
-                hitLabel: hitLabel,
                 pickedCount: picked.count,
                 onBack: { if let onBack { onBack() } else { dismiss() } },
                 onCommitName: commitName,
-                onChangeAvatar: { flash("头像换图还没接上") },
-                onPrevHit: { stepHit(-1) },
-                onNextHit: { stepHit(1) }
+                onChangeAvatar: { flash("头像换图还没接上") }
             )
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
 
@@ -86,7 +82,9 @@ struct ChatScreen: View {
                     .padding(.top, headerHeight + 8)
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+        // 输入胶囊悬浮在卷轴之上 —— 走 overlay 而不是 safeAreaInset，
+        // 才不会在底下垫出一条实色衬底；键盘避让照旧由安全区自动给。
+        .overlay(alignment: .bottom) { bottomBar }
         .background(YY.page)
         .toolbar(.hidden, for: .navigationBar)
         .animation(.sceneStandard(0.24), value: toast)
@@ -102,6 +100,7 @@ struct ChatScreen: View {
         .onChange(of: query) { _, value in scheduleSearch(value) }
         .onChange(of: mode) { _, value in
             if value != .select { picked = [] }
+            if value == .search { query = "" }
             if value != .search { hits = []; hitIndex = 0 }
         }
         // ── 破坏性操作交给系统原生动作单 ──
@@ -148,7 +147,7 @@ struct ChatScreen: View {
 
     private var thread: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22) {
+            LazyVStack(alignment: .leading, spacing: 25) {
                 if let session {
                     if session.isEmpty {
                         ChatEmptyState(seeds: seeds) { seed in
@@ -173,15 +172,14 @@ struct ChatScreen: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, headerHeight)
-            .padding(.bottom, 10)
-            .offset(x: -dragX)
-            .animation(.linear(duration: 0.14), value: dragX)
+            // 最后一条要能翻到悬浮胶囊上方
+            .padding(.bottom, dockHeight + 16)
             .scrollTargetLayout()
         }
         .scrollPosition($scrollPos)
         .scrollDismissesKeyboard(.interactively)
         .mask {
-            // 顶端淡出：内容滑到顶栏底下时化掉，而不是被硬切。
+            // 两端淡出：内容滑到顶栏底下 / 输入胶囊底下时化掉，而不是被硬切。
             // 停止点必须按**绝对点数**算——用百分比的话，屏幕一高，
             // 淡出带就够不到顶栏底缘，正文会直接压在名字和搜索键上。
             GeometryReader { proxy in
@@ -189,32 +187,32 @@ struct ChatScreen: View {
                 LinearGradient(
                     stops: [
                         .init(color: .clear, location: 0),
-                        .init(color: .clear, location: min(0.4, 34 / h)),
-                        .init(color: .black, location: min(0.8, 70 / h)),
-                        .init(color: .black, location: 1),
+                        .init(color: .clear, location: min(0.3, 34 / h)),
+                        .init(color: .black, location: min(0.4, 70 / h)),
+                        .init(color: .black, location: max(0.6, 1 - 22 / h)),
+                        .init(color: .clear, location: 1),
                     ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
             }
         }
-        .simultaneousGesture(revealGesture)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, _ in
-            pulseDayPill()
+            pulseTimePill()
         }
     }
 
     @ViewBuilder
     private func rowView(_ row: ChatRow, session: ChatSession) -> some View {
         switch row.kind {
-        case .dayMarker(let iso):
-            // 日期不在流里占一行，只留一个零高的锚点喂给浮动胶囊
+        case .timeMarker(let iso):
+            // 时间不在流里占一行，只留一个零高的锚点喂给浮动胶囊
             Color.clear
                 .frame(height: 0)
                 .onGeometryChange(for: CGFloat.self) {
                     $0.frame(in: .scrollView).minY
                 } action: { y in
-                    dayAnchors.items[row.id] = (y, ChatDayPill.label(for: iso))
+                    timeAnchors.items[row.id] = (y, ChatTimePill.label(for: iso))
                 }
         case .message(let message):
             Group {
@@ -254,43 +252,43 @@ struct ChatScreen: View {
         }
     }
 
-    // MARK: - 底部：输入信笺 / 多选工具条
+    // MARK: - 底部悬浮：输入胶囊 / 搜索条 / 多选工具条
 
-    @ViewBuilder
     private var bottomBar: some View {
-        if mode == .select {
-            ChatSelectionBar(
-                count: picked.count,
-                onShare: shareSelected,
-                onDelete: { confirmDeleteMany = true }
-            )
-            .padding(.bottom, 8)
-        } else if mode != .search {
-            ChatComposer(
-                draft: $draft,
-                chip: $chip,
-                streaming: session?.isStreaming ?? false,
-                offline: !network.isOnline,
-                onSend: sendDraft,
-                onStop: { Task { await session?.abort() } },
-                onAttachmentPicked: { flash("附件通道还没接上，这次只寄出了文字") }
-            )
-            .padding(.horizontal, 12)
-            .padding(.top, 14)
-            .padding(.bottom, 8)
-        }
-    }
-
-    // MARK: - 左拖露时间
-
-    private var revealGesture: some Gesture {
-        DragGesture(minimumDistance: 12)
-            .onChanged { value in
-                guard mode != .select else { return }
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                dragX = min(58, max(0, -value.translation.width - 4))
+        Group {
+            switch mode {
+            case .select:
+                ChatSelectionBar(
+                    count: picked.count,
+                    onShare: shareSelected,
+                    onDelete: { confirmDeleteMany = true }
+                )
+            case .search:
+                ChatSearchDock(
+                    query: $query,
+                    hitLabel: hitLabel,
+                    onPrev: { stepHit(-1) },
+                    onNext: { stepHit(1) },
+                    onClose: { mode = .idle }
+                )
+                .padding(.horizontal, 4)
+            case .idle, .contact:
+                ChatComposer(
+                    draft: $draft,
+                    chip: $chip,
+                    streaming: session?.isStreaming ?? false,
+                    offline: !network.isOnline,
+                    onSend: sendDraft,
+                    onStop: { Task { await session?.abort() } },
+                    onAttachmentPicked: { flash("附件通道还没接上，这次只寄出了文字") }
+                )
+                .padding(.horizontal, 12)
             }
-            .onEnded { _ in dragX = 0 }
+        }
+        .padding(.bottom, 8)
+        .animation(.sceneHover(0.28), value: mode)
+        // 卷轴按这个高度留出底部余量，最后一条才不会藏在胶囊底下
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dockHeight = $0 }
     }
 
     // MARK: - 动作
@@ -394,28 +392,28 @@ struct ChatScreen: View {
         if highlighted == id { highlighted = nil }
     }
 
-    // MARK: - 日戳与吐司
+    // MARK: - 整点胶囊与吐司
 
-    /// 视口顶部当前落在哪一天：取仍在顶栏之上的最后一个日界锚点
-    private var visibleDayLabel: String {
+    /// 视口顶部当前落在哪个整点：取仍在顶栏之上的最后一个时间锚
+    private var visibleTimeLabel: String {
         let threshold = headerHeight + 12
-        let all = dayAnchors.items.values
+        let all = timeAnchors.items.values
         if let nearest = all.filter({ $0.y <= threshold }).max(by: { $0.y < $1.y }) {
             return nearest.label
         }
         return all.min(by: { $0.y < $1.y })?.label ?? ""
     }
 
-    private func pulseDayPill() {
-        let label = visibleDayLabel
+    private func pulseTimePill() {
+        let label = visibleTimeLabel
         guard !label.isEmpty else { return }
-        if dayLabel != label { dayLabel = label }
-        if !dayVisible { dayVisible = true }
-        dayTask?.cancel()
-        dayTask = Task {
+        if timeLabel != label { timeLabel = label }
+        if !timeVisible { timeVisible = true }
+        timeTask?.cancel()
+        timeTask = Task {
             try? await Task.sleep(for: .milliseconds(1200))
             guard !Task.isCancelled else { return }
-            dayVisible = false
+            timeVisible = false
         }
     }
 
@@ -430,8 +428,8 @@ struct ChatScreen: View {
     }
 }
 
-/// 日界锚点的容身处。刻意不是 @Observable：写它不该触发重绘。
-final class ChatDayAnchors {
+/// 整点锚的容身处。刻意不是 @Observable：写它不该触发重绘。
+final class ChatTimeAnchors {
     var items: [String: (y: CGFloat, label: String)] = [:]
 }
 

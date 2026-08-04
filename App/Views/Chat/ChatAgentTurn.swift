@@ -39,7 +39,7 @@ struct ChatAgentTurn: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             if hasTrace {
                 ChatTraceChain(parts: message.parts)
                     .opacity(dimmed ? 0.42 : 1)
@@ -74,8 +74,7 @@ struct ChatAgentTurn: View {
                     .opacity(dimmed ? 0.42 : 1)
             }
         }
-        // 正文行带负的右内边距（时间槽要探出去），这里把整块的布局足迹钉死，
-        // 免得它把外层 LazyVStack 撑宽
+        // 盖章信笺有垫底纸和探出的印章，这里把整块的布局足迹钉死，免得它把外层 LazyVStack 撑宽
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(.sceneStandard(0.3), value: dimmed)
     }
@@ -87,14 +86,30 @@ struct ChatAgentTurn: View {
         return copy
     }
 
+    /// 没写完 / 被打断：一截断掉的虚线接一枚回环箭头 —— 不写「点击重试」那种话，
+    /// 该说的话留给 VoiceOver
     private var brokenNote: some View {
-        Button(action: onRetry) {
-            Text(message.status == .aborted ? "写到这儿停了 · 轻点续上" : (message.errorText ?? "没写完 · 轻点重试"))
-                .font(.system(size: 13))
-                .foregroundStyle(YY.ink400)
-                .underline(true, pattern: .dash)
+        let aborted = message.status == .aborted
+        return Button {
+            Haptic.lightTap()
+            onRetry()
+        } label: {
+            HStack(spacing: 10) {
+                ChatBrokenStub()
+                ZStack {
+                    ChatRetryArc()
+                        .stroke(style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                    ChatRetryTick()
+                        .stroke(style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                }
+                .frame(width: 18, height: 18)
+            }
+            .foregroundStyle(aborted ? YY.ink300 : YY.danger)
+            .frame(height: 32)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(aborted ? "写到这儿停了，轻点续上" : (message.errorText ?? "没写完，轻点重试"))
     }
 
     private var actionsRow: some View {
@@ -107,10 +122,10 @@ struct ChatAgentTurn: View {
                         onVersion(versionIndex - 1)
                     }
                     Text("\(versionIndex + 1)/\(message.versionCount)")
-                        .font(.yyMono(11))
+                        .font(.yyMono(12.5))
                         .tracking(0.44)
                         .foregroundStyle(YY.ink400)
-                        .frame(minWidth: 26)
+                        .frame(minWidth: 30)
                     versionStep("chevron.right", enabled: versionIndex < message.versionCount - 1) {
                         onVersion(versionIndex + 1)
                     }
@@ -118,8 +133,8 @@ struct ChatAgentTurn: View {
                 .transition(.opacity)
             }
         }
-        .frame(height: 38)
-        .padding(.leading, -3)
+        .frame(height: 42)
+        .padding(.leading, -4)
         .padding(.top, -4)
         .animation(.sceneStandard(0.3), value: message.versionCount)
     }
@@ -127,14 +142,30 @@ struct ChatAgentTurn: View {
     private func versionStep(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(YY.ink400)
-                .frame(width: 22, height: 28)
+                .frame(width: 26, height: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.3)
+    }
+}
+
+/// 那截断掉的虚线：左浓右淡，尾巴悬空 —— 一眼是「这里断了」
+private struct ChatBrokenStub: View {
+    var body: some View {
+        Path { p in
+            p.move(to: CGPoint(x: 0, y: 1))
+            p.addLine(to: CGPoint(x: 30, y: 1))
+        }
+        .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [2, 5]))
+        .frame(width: 30, height: 2)
+        .mask {
+            LinearGradient(colors: [.black, .black.opacity(0.15)], startPoint: .leading, endPoint: .trailing)
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -165,8 +196,8 @@ struct ChatRetryGlyph: View {
                     .stroke(style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
             }
             .foregroundStyle(hot ? YY.sage600 : YY.ink300)
-            .frame(width: 16, height: 16)
-            .frame(width: 28, height: 28)
+            .frame(width: 19, height: 19)
+            .frame(width: 34, height: 34)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

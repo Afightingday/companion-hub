@@ -24,15 +24,15 @@ struct ChatTraceChain: View {
     }
 }
 
-/// 行与行之间那截 1px 虚线：落在 rail 的中轴上（x = 12）
+/// 行与行之间那截 1px 虚线：落在 rail 的中轴上（x = 14）
 private struct ChatTraceConnector: View {
     var body: some View {
         Path { p in
-            p.move(to: CGPoint(x: 12, y: 0))
-            p.addLine(to: CGPoint(x: 12, y: 12))
+            p.move(to: CGPoint(x: 14, y: 0))
+            p.addLine(to: CGPoint(x: 14, y: 13))
         }
         .stroke(YY.sage300, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-        .frame(width: 24, height: 12)
+        .frame(width: 28, height: 13)
         .padding(.vertical, -3)
         .accessibilityHidden(true)
     }
@@ -42,60 +42,64 @@ struct ChatTraceLine: View {
     let part: UiPart
     @State private var open = false
 
+    /// 展开后这一行显示什么：思考链是把摘要**换成**全文（不是在下面再抄一遍），
+    /// 计划 / 引文才是标题下面另起一段。
+    private var expandable: Bool { spec.full != nil || spec.detail != nil }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
+        HStack(alignment: .top, spacing: 12) {
             rail
             VStack(alignment: .leading, spacing: 0) {
                 row
                 if open, let detail = spec.detail, !detail.isEmpty {
                     Text(detail)
-                        .font(.system(size: 13))
-                        .lineSpacing(13 * 0.7)
+                        .font(.system(size: 14.5))
+                        .lineSpacing(14.5 * 0.34)
                         .foregroundStyle(YY.ink500)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 7)
+                        .padding(.top, 8)
                         .transition(.opacity.combined(with: .offset(y: -3)))
                 }
             }
             .padding(.top, 5)
-            .padding(.bottom, 9)
+            .padding(.bottom, 10)
         }
     }
 
-    // 24pt rail，glyph 22pt 居中——槽位尺寸照 DS，留给平台原生动画字形
+    // 28pt rail，glyph 26pt 居中——槽位尺寸照 DS，留给平台原生动画字形
     private var rail: some View {
         ZStack(alignment: .top) {
             Color.clear
             Group {
                 if let icon = spec.icon {
                     Image(systemName: icon)
-                        .font(.system(size: 13, weight: .regular))
+                        .font(.system(size: 15, weight: .regular))
                         .foregroundStyle(spec.thinking ? YY.sage500 : YY.ink400)
                 } else {
                     Circle()
                         .strokeBorder(YY.sage300, style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2.5]))
-                        .frame(width: 15, height: 15)
+                        .frame(width: 17, height: 17)
                         .opacity(0.7)
                 }
             }
-            .frame(width: 22, height: 22)
+            .frame(width: 26, height: 26)
             .background(YY.page, in: Circle())
-            .padding(.top, 5)
+            .padding(.top, 4)
         }
-        .frame(width: 24)
+        .frame(width: 28)
     }
 
     private var row: some View {
-        HStack(alignment: .top, spacing: 9) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 9) {
                 ChatShimmerText(
-                    spec.label,
+                    open ? (spec.full ?? spec.label) : spec.label,
                     running: spec.running,
                     color: spec.thinking ? YY.sage600 : YY.ink500
                 )
                 if let target = spec.target, !target.isEmpty {
                     Text(target)
-                        .font(.yyMono(12))
+                        .font(.yyMono(13))
                         .foregroundStyle(YY.ink400)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -106,21 +110,22 @@ struct ChatTraceLine: View {
 
             if let meta = spec.meta, !meta.isEmpty {
                 Text(meta)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(spec.failed ? YY.danger : YY.ink400)
                     .lineLimit(1)
             }
-            if spec.detail != nil {
+            if expandable {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(YY.ink300)
                     .rotationEffect(.degrees(open ? 90 : 0))
+                    .padding(.top, 1)
             }
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            guard spec.detail != nil else { return }
-            withAnimation(.sceneStandard(0.2)) { open.toggle() }
+            guard expandable else { return }
+            withAnimation(.sceneStandard(0.24)) { open.toggle() }
         }
     }
 
@@ -129,8 +134,11 @@ struct ChatTraceLine: View {
     private struct Spec {
         var icon: String?
         var label: String
+        /// 展开后**替换** label 的全文；nil 表示这一行没有「更长的自己」
+        var full: String?
         var target: String?
         var meta: String?
+        /// 展开后**追加**在 label 下方的另一段内容
         var detail: String?
         var thinking = false
         var running = false
@@ -146,7 +154,8 @@ struct ChatTraceLine: View {
             return Spec(
                 icon: "sparkle",
                 label: brief.isEmpty ? "在想怎么说" : brief,
-                detail: trimmed.count > brief.count ? trimmed : nil,
+                // 收起看摘要、展开看全文，同一行原地换字——不再在下面把全文再抄一遍
+                full: trimmed.count > brief.count ? trimmed : nil,
                 thinking: true,
                 running: brief.isEmpty
             )
@@ -220,7 +229,7 @@ struct ChatShimmerText: View {
 
     var body: some View {
         let label = Text(text)
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: 14.5, weight: .medium))
 
         Group {
             if running && !reduceMotion {
@@ -254,7 +263,7 @@ struct ChatShimmerText: View {
                 label.foregroundStyle(color)
             }
         }
-        .lineSpacing(13 * 0.55)
+        .lineSpacing(14.5 * 0.32)
         .fixedSize(horizontal: false, vertical: true)
     }
 }

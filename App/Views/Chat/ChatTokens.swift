@@ -64,9 +64,6 @@ enum YY {
     // ── iOS 系统色（原生控件对位，不进品牌色板）──
     static let systemDestructive = Color(red: 1, green: 0.231, blue: 0.188)     // #FF3B30
     static let systemLabel = Color(red: 0.110, green: 0.110, blue: 0.118)       // #1C1C1E
-    /// iOS 搜索栏底：rgba(118,118,128,.12)
-    static let searchFieldFill = Color(red: 118 / 255, green: 118 / 255, blue: 128 / 255).opacity(0.12)
-    static let searchFieldInk = Color(red: 60 / 255, green: 60 / 255, blue: 67 / 255).opacity(0.6)
 }
 
 extension View {
@@ -82,29 +79,16 @@ extension View {
             .shadow(color: YY.shadowInk.opacity(0.06), radius: 2.5, y: 2)
     }
 
-    /// composer 用的双层：0 1px 3px .07 / 0 8px 22px .05
-    func yyShadowComposer() -> some View {
-        shadow(color: YY.shadowInk.opacity(0.07), radius: 1.5, y: 1)
-            .shadow(color: YY.shadowInk.opacity(0.05), radius: 11, y: 8)
+    /// 可按的原生液态玻璃（返回键、搜索钮、多选工具钮）。
+    /// interactive 那档带系统自己的按压折射，别再自己拿白半透 + ultraThinMaterial 拼。
+    func yyGlassControl(_ shape: some Shape) -> some View {
+        glassEffect(.regular.interactive(), in: shape)
     }
 
-    /// 顶栏磨砂圆钮：白半透 + 发丝描边 + 内高光
-    func yyGlassPill(_ shape: some InsettableShape) -> some View {
-        background(.white.opacity(0.55), in: shape)
-            .background(.ultraThinMaterial, in: shape)
-            .overlay { shape.strokeBorder(YY.shadowInk.opacity(0.1), lineWidth: 0.5) }
-            .overlay {
-                shape.strokeBorder(.white.opacity(0.7), lineWidth: 1)
-                    .blur(radius: 0.5)
-                    .mask {
-                        LinearGradient(
-                            colors: [.white, .clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    }
-            }
-            .shadow(color: YY.shadowInk.opacity(0.09), radius: 1.5, y: 1)
+    /// 不可按的悬浮玻璃（时间胶囊、吐司、输入胶囊）。
+    /// 走 .clear 清透档 —— .regular 在浅色纸面上会泛白（b21 已被点名过一次）。
+    func yyGlassFloat(_ shape: some Shape) -> some View {
+        glassEffect(.clear, in: shape)
     }
 
     /// 纸纹：中性噪点 soft-light，只加质感、不改页面平均明度

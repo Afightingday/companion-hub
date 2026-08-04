@@ -6,39 +6,39 @@ struct ChatEmptyState: View {
     var onPick: (String) -> Void
 
     var body: some View {
-        VStack(spacing: 30) {
+        VStack(spacing: 34) {
             ZStack {
                 SceneAsset.image("assets/chat/seal-you.png")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 70, height: 70)
+                    .frame(width: 84, height: 84)
                     .opacity(0.9)
 
                 SceneAsset.image("assets/chat/gold-sparkles.png")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 34)
+                    .frame(width: 40)
                     .opacity(0.45)
-                    .offset(x: 42, y: -38)
+                    .offset(x: 50, y: -44)
 
                 SceneAsset.image("assets/chat/swoosh.png")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 58)
+                    .frame(width: 68)
                     .opacity(0.22)
-                    .offset(x: -33, y: 42)
+                    .offset(x: -39, y: 48)
             }
-            .frame(width: 150, height: 120)
+            .frame(width: 172, height: 138)
             .accessibilityHidden(true)
 
-            VStack(spacing: 10) {
+            VStack(spacing: 11) {
                 ForEach(seeds, id: \.self) { seed in
                     Button { onPick(seed) } label: {
                         Text(seed)
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.system(size: 16.5, weight: .medium))
                             .foregroundStyle(YY.sage700)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 46)
+                            .frame(height: 52)
                             .overlay {
                                 Capsule()
                                     .strokeBorder(
@@ -50,7 +50,7 @@ struct ChatEmptyState: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 12)
         }
         .frame(maxWidth: .infinity)
         .transition(.opacity.combined(with: .offset(y: 7)))
@@ -63,16 +63,12 @@ struct ChatToast: View {
 
     var body: some View {
         Text(text)
-            .font(.yyMono(10.5))
-            .tracking(0.63)
+            .font(.system(size: 13.5))
             .foregroundStyle(YY.ink500)
-            .padding(.horizontal, 13)
-            .padding(.vertical, 5)
-            .background(YY.cream50.opacity(0.82), in: Capsule())
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay { Capsule().strokeBorder(YY.shadowInk.opacity(0.12), lineWidth: 0.5) }
-            .shadow(color: YY.shadowInk.opacity(0.1), radius: 4, y: 2)
-            .transition(.opacity)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .yyGlassFloat(Capsule())
+            .transition(.opacity.combined(with: .offset(y: -6)))
             .allowsHitTesting(false)
     }
 }
@@ -91,7 +87,7 @@ struct ChatSelectionBar: View {
             Spacer()
             toolButton("trash", tint: YY.danger, label: "删除", action: onDelete)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 22)
         .padding(.top, 8)
         .transition(.opacity.combined(with: .offset(y: 7)))
     }
@@ -104,10 +100,10 @@ struct ChatSelectionBar: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 20, weight: .regular))
+                .font(.system(size: 22, weight: .regular))
                 .foregroundStyle(tint)
-                .frame(width: 44, height: 44)
-                .yyGlassPill(Circle())
+                .frame(width: 52, height: 52)
+                .yyGlassControl(Circle())
         }
         .buttonStyle(.plain)
         .disabled(!active)

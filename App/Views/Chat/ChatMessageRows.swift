@@ -8,7 +8,8 @@ enum ChatMessageAction {
 
 /// 一条消息的一行。
 /// 你的话＝一圈 2px 虚线，不填色；祐识那边的话不进任何容器，正文直接落在纸上。
-/// 时间不占版面：64pt 的槽挂在行的右边缘之外，整条卷轴左拖才露出来。
+/// 时间**完全不进流**：整点浮动胶囊是唯一的时间线索（不做左拖露时间）。
+/// 送达状态也不写字，只用图标 + 动效交代。
 struct ChatMessageRow: View {
     let message: UiMessage
     let selecting: Bool
@@ -17,26 +18,23 @@ struct ChatMessageRow: View {
     var onPick: () -> Void
     var onAction: (ChatMessageAction) -> Void
 
+    private let bubbleShape = RoundedRectangle(cornerRadius: 19, style: .continuous)
+
     var body: some View {
-        HStack(alignment: .bottom, spacing: 9) {
+        HStack(alignment: .bottom, spacing: 11) {
             if selecting {
                 ChatSelectBox(picked: picked, action: onPick)
-                    .padding(.bottom, 5)
+                    .padding(.bottom, 7)
             }
 
-            Group {
-                if message.isUser {
-                    userBubble
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                } else {
-                    agentBody
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            if message.isUser {
+                userBubble
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            } else {
+                agentBody
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            ChatTimeSlot(sentAt: message.sentAt)
         }
-        .padding(.trailing, -64)      // 时间槽整块探出行外，对位设计稿的 margin-right:-64
         .opacity(dimmed ? 0.42 : 1)
         .animation(.sceneStandard(0.3), value: dimmed)
     }
@@ -44,57 +42,46 @@ struct ChatMessageRow: View {
     // MARK: - 你的话
 
     private var userBubble: some View {
-        VStack(alignment: .trailing, spacing: 5) {
-            HStack(alignment: .center, spacing: 7) {
-                Text(message.text)
-                    .font(.system(size: 15.5))
-                    .lineSpacing(15.5 * 0.55)
-                    .foregroundStyle(YY.ink700)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 6)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(
-                                YY.sage400,
-                                style: StrokeStyle(lineWidth: 2, dash: [5, 4])
-                            )
-                    }
-                    .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .frame(maxWidth: 260, alignment: .trailing)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .chatMenu(isUser: true, enabled: !selecting, onAction: onAction)
-
-                if message.status == .error {
-                    ChatFailMark(action: { onAction(.edit) })
-                }
+        HStack(alignment: .center, spacing: 9) {
+            // 寄出中的小圈挂在气泡左边——挂右边会把气泡顶得跳一下
+            if message.status == .sending {
+                ChatSendingMark()
             }
+
+            Text(message.text)
+                .font(.system(size: 17))
+                .lineSpacing(17 * 0.3)
+                .foregroundStyle(YY.ink700)
+                .padding(.horizontal, 17)
+                .padding(.vertical, 12)
+                .overlay {
+                    bubbleShape.strokeBorder(
+                        YY.sage400,
+                        style: StrokeStyle(lineWidth: 2, dash: [5, 4])
+                    )
+                }
+                .contentShape(.contextMenuPreview, bubbleShape)
+                .frame(maxWidth: 288, alignment: .trailing)
+                .fixedSize(horizontal: false, vertical: true)
+                .chatMenu(isUser: true, enabled: !selecting, onAction: onAction)
 
             if message.status == .error {
-                Text("未送达 · 轻点重发")
-                    .font(.yyMono(10.5, weight: .medium))
-                    .tracking(0.42)
-                    .foregroundStyle(Color(hex: 0xD0453C))
-                    .padding(.trailing, 25)
-                    .onTapGesture { onAction(.edit) }
-            } else if message.status == .sending {
-                Text("寄出中")
-                    .font(.yyMono(10))
-                    .foregroundStyle(YY.ink300)
-                    .padding(.trailing, 2)
+                ChatFailMark(action: { onAction(.edit) })
             }
         }
+        .animation(.sceneStandard(0.26), value: message.status)
     }
 
     // MARK: - 祐识那边的话
 
     private var agentBody: some View {
         Text(displayText)
-            .font(.system(size: 16))
-            .lineSpacing(16 * 0.78)
+            .font(.system(size: 17.5))
+            .lineSpacing(17.5 * 0.4)
             .foregroundStyle(YY.ink700)
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
-            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14, style: .continuous))
             .chatMenu(isUser: false, enabled: !selecting, onAction: onAction)
     }
 
@@ -168,91 +155,109 @@ struct ChatSelectBox: View {
                         .foregroundStyle(.white)
                         .opacity(picked ? 1 : 0)
                 }
-                .frame(width: 22, height: 22)
+                .frame(width: 25, height: 25)
         }
         .buttonStyle(.plain)
         .transition(.opacity)
     }
 }
 
-/// 挂在行外的时间槽。border-box 64pt，左内缩 24pt——数值对位设计稿。
-struct ChatTimeSlot: View {
-    let sentAt: String
-
-    private static let clock: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "HH:mm"
-        return f
-    }()
+/// 寄出中：一圈虚线慢慢转 —— 不写「寄出中」三个字。
+/// 用虚线是因为它是整套设计里表示「还没坐实」的通用语汇。
+struct ChatSendingMark: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var spin = false
 
     var body: some View {
-        Text(ChatTime.parse(sentAt).map { Self.clock.string(from: $0) } ?? "")
-            .font(.yyMono(10))
-            .tracking(0.3)
-            .foregroundStyle(YY.ink300)
-            .lineLimit(1)
-            .padding(.leading, 24)
-            .frame(width: 64, alignment: .leading)
-            .accessibilityHidden(true)
+        Circle()
+            .strokeBorder(YY.ink300, style: StrokeStyle(lineWidth: 1.4, dash: [3.2, 3.6]))
+            .frame(width: 15, height: 15)
+            .rotationEffect(.degrees(spin ? 360 : 0))
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 2.2).repeatForever(autoreverses: false)) {
+                    spin = true
+                }
+            }
+            .transition(.opacity.combined(with: .scale(scale: 0.6)))
+            .accessibilityLabel("寄出中")
     }
 }
 
-/// 未送达：气泡右侧一枚朱红小圈，不写整行红字
+/// 未送达：气泡右侧一枚朱红小圈，轻点重发 —— 同样不写字，话留给 VoiceOver
 struct ChatFailMark: View {
     var action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var breathe = false
 
     var body: some View {
         Button(action: action) {
             Circle()
-                .strokeBorder(YY.danger, lineWidth: 1.5)
+                .strokeBorder(YY.danger, lineWidth: 1.6)
                 .overlay {
-                    Text("!")
-                        .font(.system(size: 11, weight: .bold))
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(YY.danger)
                 }
-                .frame(width: 18, height: 18)
+                .frame(width: 22, height: 22)
+                .opacity(breathe ? 0.55 : 1)
+                .frame(width: 34, height: 34)
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.sceneStandard(0.9).repeatForever(autoreverses: true)) { breathe = true }
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.6)))
+        .accessibilityLabel("没送出去，轻点重发")
     }
 }
 
-/// 日界戳：磨砂胶囊，滚动时跟手浮现，停手 1.2 秒淡掉。
-/// 挂在滚动容器的 overlay 上，不进内容流——进内容流会被顶栏压住（设计稿里那处位置 bug）。
-struct ChatDayPill: View {
+/// 时间胶囊：**按整点**，不是日戳。滚动时跟手浮现，停手 1.2 秒淡掉。
+/// 玻璃走系统原生液态玻璃。挂在滚动容器的 overlay 上，不进内容流——
+/// 进内容流会被顶栏压住（设计稿里那处位置 bug）。
+struct ChatTimePill: View {
     let label: String
     let visible: Bool
 
     var body: some View {
         Text(label)
-            .font(.system(size: 11.5))
-            .tracking(0.34)
+            .font(.system(size: 13, weight: .medium))
             .foregroundStyle(YY.ink500)
             .lineLimit(1)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 5)
-            .background(YY.cream50.opacity(0.66), in: Capsule())
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay { Capsule().strokeBorder(YY.shadowInk.opacity(0.1), lineWidth: 0.5) }
-            .shadow(color: YY.shadowInk.opacity(0.1), radius: 1.5, y: 1)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .yyGlassFloat(Capsule())
             .opacity(visible ? 1 : 0)
+            .scaleEffect(visible ? 1 : 0.94)
             .animation(.sceneStandard(0.34), value: visible)
             .allowsHitTesting(false)
     }
 }
 
-extension ChatDayPill {
-    private static let dayFormatter: DateFormatter = {
+extension ChatTimePill {
+    private static let hourFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = "M月d日 EEE"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:00"
         return f
     }()
 
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "M月d日"
+        return f
+    }()
+
+    /// 今天只报点，跨天才补上是哪天 —— 胶囊得短，长了就成横幅了
     static func label(for iso: String) -> String {
         guard let date = ChatTime.parse(iso) else { return "" }
-        if Calendar.current.isDateInToday(date) { return "今天" }
-        if Calendar.current.isDateInYesterday(date) { return "昨天" }
-        return dayFormatter.string(from: date)
+        let clock = hourFormatter.string(from: date)
+        if Calendar.current.isDateInToday(date) { return clock }
+        if Calendar.current.isDateInYesterday(date) { return "昨天 " + clock }
+        return dayFormatter.string(from: date) + " " + clock
     }
 }

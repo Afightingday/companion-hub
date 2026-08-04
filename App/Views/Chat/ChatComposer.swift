@@ -11,7 +11,8 @@ struct ChatComposerChip: Equatable {
     var replyTo: String?
 }
 
-/// 底部信笺。附件走系统原生动作单 + PhotosPicker / 相机 / 文件选择器。
+/// 底部**悬浮胶囊**。整条浮在卷轴之上（下面不垫任何衬底），玻璃走系统原生液态玻璃。
+/// 附件走系统原生动作单 + PhotosPicker / 相机 / 文件选择器。
 struct ChatComposer: View {
     @Binding var draft: String
     @Binding var chip: ChatComposerChip?
@@ -32,67 +33,61 @@ struct ChatComposer: View {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !offline
     }
 
+    /// 单行时正好是个胶囊；长到多行也保持同一枚圆角，不跟着变形
+    private var shell: some Shape { RoundedRectangle(cornerRadius: 26, style: .continuous) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 8) {
             if let chip {
                 chipRow(chip)
                     .transition(.opacity.combined(with: .offset(y: 7)))
             }
 
-            TextField("写点什么", text: $draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...6)
-                .font(.system(size: 15.5))
-                .lineSpacing(15.5 * 0.5)
-                .foregroundStyle(YY.ink800)
-                .tint(YY.sage600)
-                .focused($focused)
-                .padding(.horizontal, 3)
-                .padding(.top, 3)
-                .padding(.bottom, 5)
+            HStack(alignment: .bottom, spacing: 6) {
+                ghostButton("plus", label: "附件") { attachSheet = true }
 
-            HStack(spacing: 0) {
-                HStack(spacing: 4) {
-                    ghostButton("plus", label: "附件") { attachSheet = true }
-                    ghostButton("camera", label: "拍照") { cameraPicker = true }
-                }
-                Spacer(minLength: 8)
+                TextField("写点什么", text: $draft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...6)
+                    .font(.system(size: 17))
+                    .lineSpacing(17 * 0.28)
+                    .foregroundStyle(YY.ink800)
+                    .tint(YY.sage600)
+                    .focused($focused)
+                    .padding(.vertical, 9)
+
                 if streaming {
                     Button(action: onStop) {
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        RoundedRectangle(cornerRadius: 3.5, style: .continuous)
                             .fill(YY.cream50)
-                            .frame(width: 11, height: 11)
-                            .frame(width: 34, height: 34)
+                            .frame(width: 12, height: 12)
+                            .frame(width: 38, height: 38)
                             .background(YY.sage600, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("停止生成")
-                    .transition(.opacity)
+                    .transition(.opacity.combined(with: .scale(scale: 0.7)))
                 } else {
                     Button(action: onSend) {
                         Image(systemName: "arrow.up")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(YY.cream50)
-                            .frame(width: 34, height: 34)
+                            .frame(width: 38, height: 38)
                             .background(YY.sage500, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
                     .opacity(canSend ? 1 : 0.38)
+                    .scaleEffect(canSend ? 1 : 0.9)
                     .animation(.sceneStandard(0.24), value: canSend)
                     .accessibilityLabel("发送")
+                    .transition(.opacity.combined(with: .scale(scale: 0.7)))
                 }
             }
         }
-        .padding(.horizontal, 11)
-        .padding(.top, 9)
-        .padding(.bottom, 8)
-        .background(YY.cream50, in: RoundedRectangle(cornerRadius: YY.rXL, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: YY.rXL, style: .continuous)
-                .strokeBorder(YY.borderHair, lineWidth: 1)
-        }
-        .yyShadowComposer()
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .yyGlassFloat(shell)
         .animation(.sceneHover(0.26), value: chip)
         .animation(.sceneStandard(0.2), value: streaming)
         // ── 附件：系统原生动作单，不自制面板 ──
@@ -118,13 +113,12 @@ struct ChatComposer: View {
     }
 
     private func chipRow(_ chip: ChatComposerChip) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             Image(systemName: chip.kind == .quote ? "arrowshape.turn.up.left" : "pencil")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(YY.sage600)
             Text(chip.text)
-                .font(.system(size: 12.5, weight: .bold))
-                .kerning(0.12)
+                .font(.system(size: 13.5, weight: .semibold))
                 .foregroundStyle(YY.sage700)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -132,27 +126,29 @@ struct ChatComposer: View {
                 self.chip = nil
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .heavy))
+                    .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(YY.sage600)
-                    .frame(width: 23, height: 23)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("取消")
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 4)
-        .frame(height: 31)
-        .background(YY.cream300, in: Capsule())
-        .overlay { Capsule().strokeBorder(YY.cream500, lineWidth: 1) }
-        .frame(maxWidth: 260, alignment: .leading)
+        .padding(.leading, 12)
+        .padding(.trailing, 3)
+        .frame(height: 34)
+        .background(YY.sage100.opacity(0.9), in: Capsule())
+        .overlay { Capsule().strokeBorder(YY.sage200, lineWidth: 1) }
+        .frame(maxWidth: 268, alignment: .leading)
+        .padding(.leading, 6)
     }
 
     private func ghostButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 16, weight: .regular))
+                .font(.system(size: 18, weight: .regular))
                 .foregroundStyle(YY.ink500)
-                .frame(width: 34, height: 34)
+                .frame(width: 38, height: 38)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

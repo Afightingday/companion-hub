@@ -2,7 +2,7 @@ import SwiftUI
 import YushiKit
 
 /// 进入完整聊天的宿主。
-/// 顶栏归 ChatScreen 自己管（返回键、头像、名字、搜索都在那一条上），
+/// 顶栏归 ChatScreen 自己管（返回键、头像、名字、搜索入口都在那一条上），
 /// 这里只负责把联系人递进去，以及没匹配到网关联系人时的占位。
 struct ChatSheetView: View {
     let spec: PetSpec

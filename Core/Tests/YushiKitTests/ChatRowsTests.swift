@@ -1,7 +1,7 @@
 import XCTest
 @testable import YushiKit
 
-/// 卷轴派生行：日界切分与时间戳解析。
+/// 卷轴派生行：整点切分与时间戳解析。
 /// 时区固定注入，否则本机时区一换用例就飘。
 final class ChatRowsTests: XCTestCase {
     private var utc: Calendar {
@@ -26,28 +26,42 @@ final class ChatRowsTests: XCTestCase {
         XCTAssertNil(ChatTime.parse("昨天下午"))
     }
 
-    func testInsertsOneMarkerPerCalendarDay() {
+    private func markerCount(_ rows: [ChatRow]) -> Int {
+        rows.filter { if case .timeMarker = $0.kind { return true }; return false }.count
+    }
+
+    func testInsertsOneMarkerPerHour() {
         let rows = groupRows([
             msg("a", "2026-08-02T22:00:00Z"),
             msg("b", "2026-08-02T23:30:00Z"),
             msg("c", "2026-08-03T00:10:00Z"),
         ], calendar: utc)
 
-        // 日界 + a + b + 日界 + c
-        XCTAssertEqual(rows.count, 5)
-        guard case .dayMarker = rows[0].kind else { return XCTFail("首条前必须有日界") }
+        // 三条各占一个整点：锚 + a + 锚 + b + 锚 + c
+        XCTAssertEqual(rows.count, 6)
+        guard case .timeMarker = rows[0].kind else { return XCTFail("首条前必须有时间锚") }
         XCTAssertEqual(rows[1].message?.id, "a")
-        XCTAssertEqual(rows[2].message?.id, "b")
-        guard case .dayMarker = rows[3].kind else { return XCTFail("跨日要再插一条日界") }
-        XCTAssertEqual(rows[4].message?.id, "c")
+        guard case .timeMarker = rows[2].kind else { return XCTFail("跨整点要再插一条") }
+        XCTAssertEqual(rows[3].message?.id, "b")
+        guard case .timeMarker = rows[4].kind else { return XCTFail("跨日同样是跨整点") }
+        XCTAssertEqual(rows[5].message?.id, "c")
     }
 
-    func testSameDayGetsSingleMarker() {
+    func testSameHourGetsSingleMarker() {
+        let rows = groupRows([
+            msg("a", "2026-08-03T01:00:00Z"),
+            msg("b", "2026-08-03T01:59:59Z"),
+        ], calendar: utc)
+        XCTAssertEqual(markerCount(rows), 1, "同一小时内只锚一次")
+    }
+
+    /// 同一天但跨了整点 —— 旧的按日切分会漏掉这条，胶囊就永远停在早上那个点
+    func testSameDayDifferentHoursGetTwoMarkers() {
         let rows = groupRows([
             msg("a", "2026-08-03T01:00:00Z"),
             msg("b", "2026-08-03T20:00:00Z"),
         ], calendar: utc)
-        XCTAssertEqual(rows.filter { if case .dayMarker = $0.kind { return true }; return false }.count, 1)
+        XCTAssertEqual(markerCount(rows), 2)
     }
 
     func testUnparseableTimestampDoesNotDropTheMessage() {

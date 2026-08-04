@@ -4,32 +4,28 @@ enum ChatMode: Equatable {
     case idle, search, select, contact
 }
 
-/// 顶栏浮在纸面上，本身不带底色。
-/// 三副长相原位互换：常态 / 会话内搜索 / 多选；改备注时名字就地长成输入框。
+/// 顶栏浮在纸面上，本身不带底色。圆钮全走系统原生液态玻璃。
+/// 常态 / 多选两副长相原位互换；改备注时名字就地长成输入框。
+/// **搜索不在这条上** —— 对位会话总览页的范式，搜索条贴在键盘上方（见 ChatSearchDock）。
 struct ChatHeaderBar: View {
     @Binding var mode: ChatMode
     @Binding var name: String
-    @Binding var query: String
     let offline: Bool
-    let hitLabel: String
     let pickedCount: Int
     var onBack: () -> Void
     var onCommitName: () -> Void
     var onChangeAvatar: () -> Void
-    var onPrevHit: () -> Void
-    var onNextHit: () -> Void
 
     @FocusState private var nameFocused: Bool
-    @FocusState private var queryFocused: Bool
 
     private var isContact: Bool { mode == .contact }
 
     var body: some View {
-        VStack(spacing: 9) {
-            switch mode {
-            case .idle, .contact: normalBar
-            case .search: searchBar
-            case .select: selectBar
+        VStack(spacing: 10) {
+            if mode == .select {
+                selectBar
+            } else {
+                normalBar
             }
             if offline { offlinePill }
         }
@@ -43,22 +39,22 @@ struct ChatHeaderBar: View {
     // MARK: - 常态 / 改备注
 
     private var normalBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 9) {
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(YY.ink600)
-                    .frame(width: 36, height: 36)
-                    .yyGlassPill(Circle())
+                    .frame(width: 42, height: 42)
+                    .yyGlassControl(Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("返回")
 
-            HStack(spacing: 11) {
+            HStack(spacing: 12) {
                 avatar
                 TextField("", text: $name)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.system(size: 21, weight: .bold))
                     .foregroundStyle(YY.ink800)
                     .tint(YY.sage500)
                     .lineLimit(1)
@@ -67,8 +63,8 @@ struct ChatHeaderBar: View {
                     .focused($nameFocused)
                     .submitLabel(.done)
                     .onSubmit { finishContact() }
-                    .padding(.horizontal, isContact ? 13 : 0)
-                    .frame(minHeight: 32)
+                    .padding(.horizontal, isContact ? 14 : 0)
+                    .frame(minHeight: 36)
                     .background(
                         isContact
                             ? Color(red: 118 / 255, green: 118 / 255, blue: 128 / 255).opacity(0.09)
@@ -100,15 +96,15 @@ struct ChatHeaderBar: View {
         SceneAsset.image("assets/chat/seal-you.png")
             .resizable()
             .scaledToFit()
-            .padding(isContact ? 6.8 : 5.5)
-            .frame(width: isContact ? 52 : 42, height: isContact ? 52 : 42)
+            .padding(isContact ? 7.4 : 6)
+            .frame(width: isContact ? 56 : 46, height: isContact ? 56 : 46)
             .background(YY.sage100, in: Circle())
             .overlay { Circle().strokeBorder(YY.borderHair, lineWidth: 1) }
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: "camera.fill")
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(Color(red: 60 / 255, green: 60 / 255, blue: 67 / 255).opacity(0.55))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 22, height: 22)
                     .background(.white, in: Circle())
                     .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
                     .offset(x: 3, y: 3)
@@ -129,106 +125,23 @@ struct ChatHeaderBar: View {
         } label: {
             HStack(spacing: 0) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .regular))
+                    .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(YY.ink600)
-                    .frame(width: isContact ? 0 : 17)
+                    .frame(width: isContact ? 0 : 18)
                     .opacity(isContact ? 0 : 1)
                     .clipped()
                 if isContact {
                     Text("完成")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(YY.sage600)
                 }
             }
-            .frame(minWidth: 36, minHeight: 36)
-            .padding(.horizontal, isContact ? 15 : 0)
-            .yyGlassPill(Capsule())
+            .frame(minWidth: 42, minHeight: 42)
+            .padding(.horizontal, isContact ? 16 : 0)
+            .yyGlassControl(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isContact ? "完成" : "搜索")
-    }
-
-    // MARK: - 会话内搜索
-
-    private var searchBar: some View {
-        VStack(spacing: 9) {
-            HStack(spacing: 9) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 15))
-                        .foregroundStyle(YY.searchFieldInk)
-                    TextField("搜索这个对话", text: $query)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 16))
-                        .foregroundStyle(YY.ink800)
-                        .tint(YY.sage600)
-                        .focused($queryFocused)
-                        .submitLabel(.search)
-                    if !query.isEmpty {
-                        Button { query = "" } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 15))
-                                .foregroundStyle(
-                                    Color(red: 60 / 255, green: 60 / 255, blue: 67 / 255).opacity(0.3)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("清空")
-                    }
-                }
-                .padding(.horizontal, 10)
-                .frame(height: 36)
-                .background(YY.searchFieldFill, in: RoundedRectangle(cornerRadius: YY.rSM, style: .continuous))
-
-                Button {
-                    query = ""
-                    mode = .idle
-                } label: {
-                    Text("取消")
-                        .font(.system(size: 16))
-                        .foregroundStyle(YY.sage600)
-                }
-                .buttonStyle(.plain)
-            }
-
-            if !query.trimmingCharacters(in: .whitespaces).isEmpty {
-                HStack(spacing: 6) {
-                    Text(hitLabel)
-                        .font(.yyMono(10.5))
-                        .tracking(0.63)
-                        .foregroundStyle(YY.ink400)
-                    Rectangle()
-                        .fill(.clear)
-                        .frame(height: 1)
-                        .overlay {
-                            GeometryReader { proxy in
-                                Path { p in
-                                    p.move(to: CGPoint(x: 0, y: 0.5))
-                                    p.addLine(to: CGPoint(x: proxy.size.width, y: 0.5))
-                                }
-                                .stroke(YY.borderDash, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                            }
-                        }
-                        .opacity(0.7)
-                    hitStepper("chevron.up", action: onPrevHit)
-                    hitStepper("chevron.down", action: onNextHit)
-                }
-                .padding(.horizontal, 2)
-                .transition(.opacity)
-            }
-        }
-        .onAppear { queryFocused = true }
-    }
-
-    private func hitStepper(_ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(YY.ink400)
-                .frame(width: 26, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - 多选
@@ -237,33 +150,33 @@ struct ChatHeaderBar: View {
         HStack {
             Button { mode = .idle } label: {
                 Text("取消")
-                    .font(.system(size: 16))
+                    .font(.system(size: 17))
                     .foregroundStyle(YY.sage600)
             }
             .buttonStyle(.plain)
 
             Text(pickedCount > 0 ? "已选 \(pickedCount) 条" : "选择消息")
-                .font(.system(size: 15.5, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(YY.ink700)
                 .frame(maxWidth: .infinity)
 
-            Color.clear.frame(width: 32, height: 1)
+            Color.clear.frame(width: 36, height: 1)
         }
-        .frame(height: 34)
+        .frame(height: 42)
     }
 
     // MARK: - 离线
 
     private var offlinePill: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             ChatPulseDot()
             Text("网络已断开")
-                .font(.yyMono(10))
+                .font(.yyMono(11))
                 .tracking(0.6)
                 .foregroundStyle(YY.ink400)
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 3)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 4)
         .overlay {
             Capsule().strokeBorder(YY.ink300, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
         }
@@ -273,7 +186,6 @@ struct ChatHeaderBar: View {
     // MARK: -
 
     private func openSearch() {
-        query = ""
         mode = .search
     }
 
@@ -281,6 +193,55 @@ struct ChatHeaderBar: View {
         nameFocused = false
         mode = .idle
         onCommitName()
+    }
+}
+
+/// 会话内搜索：对位会话总览页的范式 —— 直接用那边同一枚 `NativeSearchBar`（UISearchBar 原件，
+/// 自带放大镜/清空/取消与拼音组合期保护），贴在键盘上方。
+/// 卷轴留在原地继续显示命中高亮；命中计数与上下跳做成一枚窄玻璃丸浮在搜索条正上方。
+struct ChatSearchDock: View {
+    @Binding var query: String
+    let hitLabel: String
+    var onPrev: () -> Void
+    var onNext: () -> Void
+    var onClose: () -> Void
+
+    private var hasQuery: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    var body: some View {
+        VStack(spacing: 9) {
+            if hasQuery {
+                HStack(spacing: 2) {
+                    Text(hitLabel)
+                        .font(.yyMono(12))
+                        .tracking(0.5)
+                        .foregroundStyle(YY.ink500)
+                        .padding(.trailing, 6)
+                    stepper("chevron.up", action: onPrev)
+                    stepper("chevron.down", action: onNext)
+                }
+                .padding(.leading, 15)
+                .padding(.trailing, 5)
+                .padding(.vertical, 4)
+                .yyGlassFloat(Capsule())
+                .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+
+            NativeSearchBar(text: $query, placeholder: "搜索这个对话", onCancel: onClose)
+                .frame(height: 52)
+        }
+        .animation(.sceneStandard(0.24), value: hasQuery)
+    }
+
+    private func stepper(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(YY.ink500)
+                .frame(width: 32, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

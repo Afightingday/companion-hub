@@ -262,13 +262,13 @@ public extension UiMessage {
     }
 }
 
-// MARK: - 卷轴派生行（日界切分）
+// MARK: - 卷轴派生行（按整点切分）
 
-/// 卷轴上的一行：日界戳，或一条消息。
+/// 卷轴上的一行：时间锚，或一条消息。
 /// 纯函数产出、由会话层缓存 —— 写成计算属性的话，流式期间每个字符都会重算全表。
 public struct ChatRow: Sendable, Equatable, Identifiable {
     public enum Kind: Sendable, Equatable {
-        case dayMarker(String)
+        case timeMarker(String)
         case message(UiMessage)
     }
 
@@ -300,18 +300,23 @@ public enum ChatTime {
     }
 }
 
-/// 按日历日切出日界戳。calendar 可注入，测试才不受本机时区影响。
+/// 按**整点**切出时间锚 —— 浮动胶囊读的就是它，所以粒度是小时不是天。
+/// 锚行零高、不占版面；calendar 可注入，测试才不受本机时区影响。
 public func groupRows(_ messages: [UiMessage], calendar: Calendar = .current) -> [ChatRow] {
     var rows: [ChatRow] = []
-    rows.reserveCapacity(messages.count + 4)
-    var lastDay: Date?
+    rows.reserveCapacity(messages.count + 8)
+    var lastHour: Date?
 
     for m in messages {
-        if let date = ChatTime.parse(m.sentAt) {
-            let day = calendar.startOfDay(for: date)
-            if lastDay == nil || day != lastDay {
-                rows.append(ChatRow(id: "day-\(Int(day.timeIntervalSince1970))", kind: .dayMarker(m.sentAt)))
-                lastDay = day
+        if let date = ChatTime.parse(m.sentAt),
+           let hour = calendar.date(
+               from: calendar.dateComponents([.year, .month, .day, .hour], from: date)
+           ) {
+            if lastHour == nil || hour != lastHour {
+                rows.append(
+                    ChatRow(id: "t-\(Int(hour.timeIntervalSince1970))", kind: .timeMarker(m.sentAt))
+                )
+                lastHour = hour
             }
         }
         rows.append(ChatRow(id: m.id, kind: .message(m)))
