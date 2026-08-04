@@ -52,8 +52,15 @@ public struct UiMessage: Sendable, Equatable, Identifiable {
     public var sentAt: String
     /// 群聊说话人（DM 为空；第 3 批用）
     public var contactId: String?
+    /// 被引用的消息 id（发送时带 replyTo；历史由 ApiMessage 带回）
+    public var replyTo: String?
+    /// 就地重答产生的历史版本正文（当前 text 是最新一版）。
+    /// 服务端尚无分支树，重答会删掉旧那一轮，故旧版本只在本次会话内存活。
+    public var priorVersions: [String]
 
     public var isUser: Bool { author == "user" }
+    /// 版本切换器要显示的总版本数（含当前这版）
+    public var versionCount: Int { priorVersions.count + 1 }
 
     public init(
         id: String,
@@ -63,7 +70,9 @@ public struct UiMessage: Sendable, Equatable, Identifiable {
         parts: [UiPart] = [],
         errorText: String? = nil,
         sentAt: String,
-        contactId: String? = nil
+        contactId: String? = nil,
+        replyTo: String? = nil,
+        priorVersions: [String] = []
     ) {
         self.id = id
         self.author = author
@@ -73,6 +82,8 @@ public struct UiMessage: Sendable, Equatable, Identifiable {
         self.errorText = errorText
         self.sentAt = sentAt
         self.contactId = contactId
+        self.replyTo = replyTo
+        self.priorVersions = priorVersions
     }
 }
 
@@ -245,7 +256,65 @@ public extension UiMessage {
             parts: parts,
             errorText: nil,
             sentAt: api.sentAt,
-            contactId: api.contactId
+            contactId: api.contactId,
+            replyTo: api.replyTo
         )
     }
+}
+
+// MARK: - 卷轴派生行（日界切分）
+
+/// 卷轴上的一行：日界戳，或一条消息。
+/// 纯函数产出、由会话层缓存 —— 写成计算属性的话，流式期间每个字符都会重算全表。
+public struct ChatRow: Sendable, Equatable, Identifiable {
+    public enum Kind: Sendable, Equatable {
+        case dayMarker(String)
+        case message(UiMessage)
+    }
+
+    public var id: String
+    public var kind: Kind
+
+    public var message: UiMessage? {
+        if case .message(let m) = kind { return m }
+        return nil
+    }
+}
+
+/// ISO8601 时间戳解析。两种形状都收（带/不带小数秒），静态复用避免渲染路径新建 formatter。
+public enum ChatTime {
+    nonisolated(unsafe) private static let withFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    nonisolated(unsafe) private static let plain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    public static func parse(_ iso: String) -> Date? {
+        withFraction.date(from: iso) ?? plain.date(from: iso)
+    }
+}
+
+/// 按日历日切出日界戳。calendar 可注入，测试才不受本机时区影响。
+public func groupRows(_ messages: [UiMessage], calendar: Calendar = .current) -> [ChatRow] {
+    var rows: [ChatRow] = []
+    rows.reserveCapacity(messages.count + 4)
+    var lastDay: Date?
+
+    for m in messages {
+        if let date = ChatTime.parse(m.sentAt) {
+            let day = calendar.startOfDay(for: date)
+            if lastDay == nil || day != lastDay {
+                rows.append(ChatRow(id: "day-\(Int(day.timeIntervalSince1970))", kind: .dayMarker(m.sentAt)))
+                lastDay = day
+            }
+        }
+        rows.append(ChatRow(id: m.id, kind: .message(m)))
+    }
+    return rows
 }

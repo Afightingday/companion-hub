@@ -2,9 +2,8 @@ import Foundation
 import Observation
 import YushiKit
 
-/// 聊天页状态机（第 2 批），编排对位 apps/web/src/pages/Chat.tsx：
-/// 快照加载 → 乐观发送 → 按 turnId 订阅事件流逐条归约 → 收尾补一次已读。
-/// 归约规则在 Core（ChatReducer.swift），这里只管网络回合与消息数组。
+/// 会话页状态机：快照加载 → 乐观发送 → 按 turnId 订阅事件流逐条归约 → 收尾补一次已读。
+/// 归约规则在 Core（ChatReducer.swift）；这里只管网络回合、消息数组，以及派生行的缓存。
 @MainActor
 @Observable
 final class ChatSession {
@@ -13,15 +12,25 @@ final class ChatSession {
 
     private(set) var conversationId: String?
     private(set) var messages: [UiMessage] = []
+    /// 卷轴派生行（日界切分）。**存起来**——写成计算属性的话，流式期间每个字符都会重算全表。
+    private(set) var rows: [ChatRow] = []
+    private(set) var contact: ContactConfig?
     private(set) var loadError: String?
     private(set) var activeTurnId: String?
+    private(set) var loadingMore = false
+    private(set) var reachedTop = false
+
     var isStreaming: Bool { activeTurnId != nil }
+    var isEmpty: Bool { messages.isEmpty && loadError == nil }
 
     init(client: GatewayClient?, item: ContactListItem) {
         self.client = client
         self.contactId = item.contact.id
         self.conversationId = item.conversationId
+        self.contact = item.contact
     }
+
+    // MARK: - 加载
 
     func load() async {
         guard let client else {
@@ -31,36 +40,68 @@ final class ChatSession {
         do {
             let snapshot = try await client.conversation(contactId: contactId, limit: 50)
             conversationId = snapshot.conversationId
-            messages = snapshot.messages.map(UiMessage.init(from:))
+            contact = snapshot.contact
+            replaceMessages(snapshot.messages.map(UiMessage.init(from:)))
             loadError = nil
-            // 进门即已读（与网页版一致）
+            reachedTop = snapshot.messages.count < 50
             try? await client.markRead(conversationId: snapshot.conversationId)
         } catch {
             loadError = error.localizedDescription
         }
     }
 
-    /// 乐观发送：先落一条本地 user 气泡，POST 回来换真 id 并插 assistant 占位，随后拉流
-    func send(_ rawText: String) async {
+    /// 往上翻历史。`before` 用当前最早一条的 id。
+    @discardableResult
+    func loadMore() async -> Bool {
+        guard let client, let conversationId, !loadingMore, !reachedTop,
+              let oldest = messages.first else { return false }
+        loadingMore = true
+        defer { loadingMore = false }
+        do {
+            let older = try await client.messages(conversationId: conversationId, before: oldest.id, limit: 30)
+            if older.isEmpty { reachedTop = true; return false }
+            let known = Set(messages.map(\.id))
+            let fresh = older.map(UiMessage.init(from:)).filter { !known.contains($0.id) }
+            if fresh.isEmpty { reachedTop = true; return false }
+            replaceMessages(fresh + messages)
+            reachedTop = older.count < 30
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// 一直往前翻到找着这条为止（搜索命中不在内存时用）。最多回溯 6 页。
+    func revealMessage(id: String) async -> Bool {
+        if messages.contains(where: { $0.id == id }) { return true }
+        for _ in 0..<6 {
+            guard await loadMore() else { break }
+            if messages.contains(where: { $0.id == id }) { return true }
+        }
+        return false
+    }
+
+    // MARK: - 发送
+
+    /// 乐观发送：先落一条本地气泡，POST 回来换真 id 并插 assistant 占位，随后拉流
+    func send(_ rawText: String, replyTo: String? = nil) async {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming, let client, let conversationId else { return }
 
         let tempId = "temp-\(UUID().uuidString)"
-        let now = ISO8601DateFormatter().string(from: Date())
-        messages.append(
-            UiMessage(id: tempId, author: "user", status: .sending, text: text, sentAt: now)
+        let now = ChatSession.isoNow()
+        appendMessage(
+            UiMessage(id: tempId, author: "user", status: .sending, text: text, sentAt: now, replyTo: replyTo)
         )
 
         do {
-            let res = try await client.sendMessage(conversationId: conversationId, text: text)
+            let res = try await client.sendMessage(conversationId: conversationId, text: text, replyTo: replyTo)
             patch(tempId) {
                 $0.id = res.userMessageId
                 $0.status = .done
             }
             let assistantId = res.assistantMessageId ?? "assistant-\(res.turnId)"
-            messages.append(
-                UiMessage(id: assistantId, author: "contact", status: .streaming, sentAt: now)
-            )
+            appendMessage(UiMessage(id: assistantId, author: "contact", status: .streaming, sentAt: now))
             activeTurnId = res.turnId
             await run(turnId: res.turnId, assistantId: assistantId, client: client)
         } catch {
@@ -71,29 +112,96 @@ final class ChatSession {
         }
     }
 
-    /// 停止生成：流内会送 error{code:"aborted"} 收尾帧，气泡状态交给归约器
+    /// 停止生成：流内会送 error{code:"aborted"} 收尾帧，状态交给归约器
     func abort() async {
         guard let client, let turnId = activeTurnId else { return }
         try? await client.abortTurn(turnId: turnId)
     }
 
+    /// 就地重答。
+    /// 网关没有 regenerate 端点，且上下文是从扁平历史组装的——旧那一轮必须先删掉，
+    /// 否则新回合会把上一版答案一起喂回去。旧正文留在客户端当历史版本（本次会话内有效）。
+    /// 分支树落库是独立一批的事（祐祐 2026-08-03 定）。
+    func retry(assistantId: String) async {
+        guard let client, !isStreaming,
+              let assistantIndex = messages.firstIndex(where: { $0.id == assistantId }),
+              assistantIndex > 0
+        else { return }
+
+        let assistant = messages[assistantIndex]
+        let user = messages[assistantIndex - 1]
+        guard user.isUser, !user.text.isEmpty else { return }
+
+        var history = assistant.priorVersions
+        if !assistant.text.isEmpty { history.append(assistant.text) }
+
+        try? await client.deleteMessage(id: assistant.id)
+        try? await client.deleteMessage(id: user.id)
+        messages.removeAll { $0.id == assistant.id || $0.id == user.id }
+        rebuildRows()
+
+        await send(user.text, replyTo: user.replyTo)
+
+        // 新回合落地后，把旧版本挂到新回复上，版本切换器才有得切
+        if let last = messages.last, !last.isUser {
+            patch(last.id) { $0.priorVersions = history }
+        }
+    }
+
+    // MARK: - 编辑 / 删除
+
+    func delete(ids: Set<String>) async {
+        guard let client else { return }
+        for id in ids where !id.hasPrefix("temp-") {
+            try? await client.deleteMessage(id: id)
+        }
+        messages.removeAll { ids.contains($0.id) }
+        rebuildRows()
+    }
+
     /// 审批裁决：本地即时置态（手感），服务端广播兜底纠偏；410=已超时也按本地选择显示
     func decide(approvalId: String, decision: String) async {
         applyApprovalResolved(messages: &messages, approvalId: approvalId, decision: decision)
+        rebuildRows()
         guard let client else { return }
         try? await client.decideApproval(approvalId: approvalId, decision: decision)
     }
 
+    // MARK: - 搜索
+
+    /// 返回命中的消息 id，按时间正序（和卷轴一个方向）
+    func search(_ query: String) async -> [String] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, let client, let conversationId else { return [] }
+        guard let found = try? await client.searchMessages(conversationId: conversationId, query: q, limit: 30)
+        else { return [] }
+        return found.map(\.id).reversed()
+    }
+
+    // MARK: - 联系人
+
+    func updateContact(name: String) async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let client, !trimmed.isEmpty, trimmed != contact?.name else { return }
+        contact?.name = trimmed      // 先本地生效，手感不等网络
+        if let saved = try? await client.patchContact(id: contactId, patch: ContactPatch(name: trimmed)) {
+            contact = saved
+        }
+    }
+
+    // MARK: - 内部
+
     private func run(turnId: String, assistantId: String, client: GatewayClient) async {
         do {
             for try await env in TurnStream.events(client: client, turnId: turnId) {
-                // 网关自造控制信号先分流，不进归约器（Chat.tsx:110-121 同规则）
+                // 网关自造控制信号先分流，不进归约器
                 if let resolved = env.event.approvalResolved {
                     applyApprovalResolved(
                         messages: &messages,
                         approvalId: resolved.id,
                         decision: resolved.decision
                     )
+                    rebuildRows()
                     continue
                 }
                 patch(assistantId) { $0.apply(env.event) }
@@ -111,7 +219,6 @@ final class ChatSession {
         if messages.first(where: { $0.id == assistantId })?.status == .streaming {
             await load()
         } else if let conversationId {
-            // 流式收尾后服务端未读可能又动过，补一次已读（Chat.tsx:122-125）
             try? await client.markRead(conversationId: conversationId)
         }
     }
@@ -119,5 +226,26 @@ final class ChatSession {
     private func patch(_ id: String, _ mutate: (inout UiMessage) -> Void) {
         guard let i = messages.firstIndex(where: { $0.id == id }) else { return }
         mutate(&messages[i])
+        rebuildRows()
+    }
+
+    private func appendMessage(_ message: UiMessage) {
+        messages.append(message)
+        rebuildRows()
+    }
+
+    private func replaceMessages(_ next: [UiMessage]) {
+        messages = next
+        rebuildRows()
+    }
+
+    private func rebuildRows() {
+        rows = groupRows(messages)
+    }
+
+    private static func isoNow() -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: Date())
     }
 }

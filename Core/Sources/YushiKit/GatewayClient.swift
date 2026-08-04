@@ -31,6 +31,7 @@ public enum GatewayError: Error, LocalizedError, Sendable {
 
 // 响应信封放文件级：局部类型的 Codable 合成在部分 Swift 工具链上不可用
 private struct ContactsResponse: Decodable { let items: [ContactListItem] }
+private struct ContactResponse: Decodable { let contact: ContactConfig }
 private struct GroupsResponse: Decodable { let items: [GroupListItem] }
 private struct MessagesResponse: Decodable { let messages: [ApiMessage] }
 private struct OkResponse: Decodable { let ok: Bool? }
@@ -46,6 +47,27 @@ private struct SendMessageBody: Encodable {
 private struct ApprovalDecisionBody: Encodable {
     /// "approve" | "deny"
     let decision: String
+}
+
+/// 联系人局部更新：网关侧是 `{...existing, ...body}` 合并，只发要改的字段即可。
+/// 合成的 encode 对 Optional 走 encodeIfPresent，nil 字段不会进 JSON。
+public struct ContactPatch: Encodable, Sendable {
+    public var name: String?
+    public var signature: String?
+    public var nicknameForUser: String?
+    public var avatarUrl: String?
+
+    public init(
+        name: String? = nil,
+        signature: String? = nil,
+        nicknameForUser: String? = nil,
+        avatarUrl: String? = nil
+    ) {
+        self.name = name
+        self.signature = signature
+        self.nicknameForUser = nicknameForUser
+        self.avatarUrl = avatarUrl
+    }
 }
 
 /// 网关 HTTP 客户端（端点与 apps/web/src/lib/api.ts 一一对应）。
@@ -111,6 +133,37 @@ public final class GatewayClient: @unchecked Sendable {
             "/api/conversations/\(conversationId)/messages",
             body: SendMessageBody(text: text, replyTo: replyTo)
         )
+    }
+
+    /// 会话内搜索（返回的 StoredMessage 不含 parts，够定位用）
+    public func searchMessages(
+        conversationId: String,
+        query: String,
+        limit: Int = 20
+    ) async throws -> [ApiMessage] {
+        let r: MessagesResponse = try await get(
+            "/api/conversations/\(conversationId)/search",
+            query: [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "limit", value: String(limit)),
+            ]
+        )
+        return r.messages
+    }
+
+    public func deleteMessage(id: String) async throws {
+        let _: OkResponse = try await send(method: "DELETE", path: "/api/messages/\(id)", query: [], bodyData: nil)
+    }
+
+    /// 改名字 / 备注 / 称呼；网关合并后回全量联系人
+    public func patchContact(id: String, patch: ContactPatch) async throws -> ContactConfig {
+        let r: ContactResponse = try await send(
+            method: "PATCH",
+            path: "/api/contacts/\(id)",
+            query: [],
+            bodyData: try encoder.encode(patch)
+        )
+        return r.contact
     }
 
     /// 停止生成（流内会收到 error{code:"aborted"} 收尾帧）

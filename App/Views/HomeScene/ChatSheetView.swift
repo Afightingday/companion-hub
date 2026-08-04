@@ -1,34 +1,42 @@
 import SwiftUI
 import YushiKit
 
-/// 进入完整聊天：从下滑上来的一张纸（demo chat-sheet 对位）。
-/// 顶栏 = 返回 + 头像 + 名字/定位；正文接第 1 批的只读 ChatView，
-/// 没匹配到网关联系人时给占位提示。
+/// 进入完整聊天的宿主。
+/// 顶栏归 ChatScreen 自己管（返回键、头像、名字、搜索都在那一条上），
+/// 这里只负责把联系人递进去，以及没匹配到网关联系人时的占位。
 struct ChatSheetView: View {
     let spec: PetSpec
     let contact: ContactListItem?
     var onBack: () -> Void
 
     var body: some View {
-        ZStack {
-            SceneTokens.paperPage.ignoresSafeArea()
-            VStack(spacing: 0) {
-                bar
-                DashedLineShape()
-                    .stroke(SceneTokens.ink300, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                    .frame(height: 1)
-
-                if let contact {
-                    ChatView(item: contact)
-                } else {
-                    placeholder
-                }
-            }
+        if let contact {
+            ChatScreen(item: contact, onBack: onBack)
+        } else {
+            placeholder
         }
     }
 
-    private var bar: some View {
-        HStack(spacing: 10) {
+    private var placeholder: some View {
+        ZStack {
+            SceneTokens.paperPage.ignoresSafeArea()
+            VStack(spacing: 8) {
+                Text("和\(spec.name)的完整对话")
+                    .font(.system(size: 14))
+                    .tracking(0.84)
+                    .foregroundStyle(SceneTokens.ink500)
+                Text("还没匹配到网关联系人 · 去「案头」连上后，这里直通聊天")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(SceneTokens.ink400)
+            }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(SceneTokens.sage400, style: StrokeStyle(lineWidth: 1.5, dash: [5, 5])))
+            .padding(EdgeInsets(top: 24, leading: 16, bottom: 44, trailing: 16))
+        }
+        .overlay(alignment: .topLeading) {
             Button(action: onBack) {
                 Image(systemName: "chevron.backward")
                     .font(.system(size: 20, weight: .medium))
@@ -37,41 +45,8 @@ struct ChatSheetView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.leading, -10)
-
-            PetAvatarView(spec: spec, size: 38)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(spec.name)
-                    .font(.system(size: 17, weight: .bold))
-                    .tracking(0.68)
-                    .foregroundStyle(SceneTokens.ink800)
-                Text(spec.role)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(SceneTokens.ink400)
-            }
-            Spacer()
+            .padding(.leading, 6)
         }
-        .padding(.horizontal, 16)
-        .frame(height: 54)
-    }
-
-    private var placeholder: some View {
-        VStack(spacing: 8) {
-            Text("和\(spec.name)的完整对话")
-                .font(.system(size: 14))
-                .tracking(0.84)
-                .foregroundStyle(SceneTokens.ink500)
-            Text("还没匹配到网关联系人 · 去「案头」连上后，这里直通聊天")
-                .font(.system(size: 11.5))
-                .foregroundStyle(SceneTokens.ink400)
-        }
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(SceneTokens.sage400, style: StrokeStyle(lineWidth: 1.5, dash: [5, 5])))
-        .padding(EdgeInsets(top: 24, leading: 16, bottom: 44, trailing: 16))
     }
 }
 

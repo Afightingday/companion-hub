@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>祐识 · Conversation Screen 动效草样</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   祐识 · 奶油宣纸 tokens（1:1 抄自 DS tokens/*.css）
+   ═══════════════════════════════════════════════════════════ */
+:root{
+  --cream-50:#FEFEFC; --cream-100:#FBFAF5; --cream-200:#F8F7F1;
+  --cream-300:#F5F4EF; --cream-400:#EDEBE1; --cream-500:#E0DDD0; --cream-600:#CDC9BB;
+  --ink-900:#2B3123; --ink-800:#353D2B; --ink-700:#3E4637; --ink-600:#4E5743;
+  --ink-500:#5F6A4F; --ink-400:#7C876A; --ink-300:#9AA488; --ink-200:#BAC2A9;
+  --sage-700:#5E6E44; --sage-600:#6E7E52; --sage-500:#8A9A6B; --sage-400:#A3B187;
+  --sage-300:#C2CBAF; --sage-200:#DCE2CF; --sage-100:#ECEFE2; --sage-50:#F4F6EE;
+  --gold-600:#B39A57; --gold-500:#C6B275; --gold-200:#EFE7CF;
+  --rose-600:#C58E86; --rose-500:#D6AAA3; --rose-200:#F5E5E2;
+  --danger:#C57B6E; --danger-wash:#F3E1DC;
+  --paper-page:#F5F4EF;
+  --border-hair:var(--cream-500); --border-dash:var(--ink-300); --border-sage:var(--sage-300);
+
+  --radius-md:14px; --radius-lg:18px; --radius-xl:24px; --radius-2xl:32px;
+
+  --shadow-xs:0 1px 2px rgba(62,70,55,.06);
+  --shadow-sm:0 2px 6px rgba(62,70,55,.07),0 1px 2px rgba(62,70,55,.05);
+  --shadow-md:0 6px 16px rgba(62,70,55,.09),0 2px 5px rgba(62,70,55,.06);
+  --shadow-lg:0 14px 34px rgba(62,70,55,.12),0 4px 10px rgba(62,70,55,.07);
+
+  --dur-fast:120ms; --dur-base:200ms; --dur-slow:320ms; --dur-slower:480ms;
+  --ease-standard:cubic-bezier(.4,.14,.3,1);
+  --ease-out:cubic-bezier(.2,.7,.3,1);
+  --ease-gentle:cubic-bezier(.32,.72,.28,1);
+  --ease-hover:cubic-bezier(.34,1.2,.64,1);
+
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  background:#8E9384;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Noto Sans SC",system-ui,sans-serif;
+  display:flex;align-items:flex-start;justify-content:center;gap:22px;padding:18px;
+  overflow:auto;
+}
+
+/* ── 机身：iPhone 16 Pro Max 440×956pt ── */
+#stage{transform-origin:top center}
+.phone{
+  position:relative;width:440px;height:956px;flex:none;
+  background:var(--paper-page);border-radius:54px;overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.34),0 0 0 11px #1d211a,0 0 0 12px #3a4034;
+  display:flex;flex-direction:column;isolation:isolate;
+}
+.phone::after{ /* 纸纹：soft-light 中性噪点，不改变页面平均明度 */
+  content:'';position:absolute;inset:0;background-image:var(--grain);
+  opacity:.045;mix-blend-mode:soft-light;pointer-events:none;z-index:60;
+}
+
+/* ── 状态栏（只作指示，真机由系统画） ── */
+.statusbar{height:59px;flex:none;display:flex;align-items:flex-end;
+  justify-content:space-between;padding:0 32px 6px;font-size:15px;font-weight:600;color:var(--ink-800)}
+.statusbar .right{display:flex;gap:6px;align-items:center;opacity:.85}
+
+/* ═══════════════ 导航栏（原位变形搜索的宿主）═══════════════ */
+.navbar{
+  position:relative;height:48px;flex:none;display:flex;align-items:center;
+  padding:0 12px;gap:6px;z-index:30;
+}
+.navbar::after{content:'';position:absolute;left:20px;right:20px;bottom:0;height:1px;
+  background:var(--cream-500);opacity:.9;transition:opacity var(--dur-base)}
+.nav-btn{
+  width:40px;height:40px;flex:none;border:0;background:transparent;border-radius:50%;
+  display:grid;place-items:center;color:var(--ink-600);cursor:pointer;
+  transition:background var(--dur-fast),transform var(--dur-fast) var(--ease-out);
+}
+.nav-btn:active{transform:scale(.9);background:var(--sage-100)}
+.nav-id{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
+  transition:opacity var(--dur-base) var(--ease-standard),transform var(--dur-base) var(--ease-standard);
+}
+.nav-id .ava{width:26px;height:26px;border-radius:50%;background:var(--sage-200);
+  border:1.5px solid var(--cream-500);display:grid;place-items:center;font-size:13px;color:var(--sage-700);font-weight:700}
+.nav-id .nm{font-size:16px;font-weight:650;color:var(--ink-800);letter-spacing:.2px}
+.nav-id .dot{width:5px;height:5px;border-radius:50%;background:var(--sage-500)}
+
+/* 搜索：就地展开，不弹新栏 */
+.searchwrap{
+  position:absolute;left:52px;right:52px;top:6px;height:36px;
+  display:flex;align-items:center;pointer-events:none;
+}
+.searchfield{
+  width:0;height:36px;overflow:hidden;border-radius:999px;
+  background:var(--cream-50);border:1px solid var(--border-hair);
+  display:flex;align-items:center;gap:7px;padding:0 12px;opacity:0;
+  margin-left:auto; /* 从放大镜那一侧向左长出来 */
+  transition:width var(--dur-slow) var(--ease-gentle),opacity var(--dur-fast) var(--ease-standard);
+}
+.searchfield input{
+  border:0;outline:0;background:transparent;font:inherit;font-size:15px;
+  color:var(--ink-800);width:100%;min-width:0;
+}
+.searchfield input::placeholder{color:var(--ink-300)}
+.nav-cancel{
+  flex:none;border:0;background:transparent;font:inherit;font-size:15px;color:var(--sage-700);
+  cursor:pointer;opacity:0;width:0;overflow:hidden;padding:0;white-space:nowrap;
+  transition:opacity var(--dur-base) var(--ease-standard) 60ms,width var(--dur-slow) var(--ease-gentle);
+}
+.phone.searching .nav-id{opacity:0;transform:scale(.96)}
+.phone.searching .searchwrap{pointer-events:auto}
+.phone.searching .searchfield{width:100%;opacity:1}
+.phone.searching .nav-cancel{opacity:1;width:34px;padding-left:6px}
+.phone.searching .nav-btn.search{opacity:0;pointer-events:none}
+
+/* ── 离线条：从导航栏底缘滑下的一道窄带 ── */
+.offline{
+  flex:none;height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:7px;
+  font-size:12.5px;color:var(--ink-400);background:var(--cream-400);
+  transition:height var(--dur-slow) var(--ease-gentle);
+}
+.phone.offline-on .offline{height:26px}
+.offline .pulse{width:6px;height:6px;border-radius:50%;background:var(--ink-300);
+  animation:breathe 1.6s var(--ease-standard) infinite}
+@keyframes breathe{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+
+/* ═══════════════ 会话卷轴 ═══════════════ */
+.scroll{flex:1;overflow-y:auto;overflow-x:hidden;position:relative;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+.reel{padding:14px 20px 18px;transition:transform var(--dur-base) var(--ease-out)}
+.phone.selecting .reel{transform:translateX(32px)}
+
+/* 日界戳：居中小字 + 一枚小折纸，无分割线 */
+.daystamp{
+  position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:center;gap:7px;
+  padding:8px 0 14px;pointer-events:none;
+}
+.daystamp .lbl{font-size:11.5px;letter-spacing:1.1px;color:var(--ink-300);
+  background:var(--paper-page);padding:2px 8px;border-radius:999px}
+.daystamp img{width:15px;opacity:.62}
+
+/* ── 消息通用 ── */
+.msg{position:relative;margin-top:20px}
+.msg.grouped{margin-top:4px}
+.msg .selbox{
+  position:absolute;left:-32px;top:50%;margin-top:-11px;width:22px;height:22px;border-radius:50%;
+  border:1.5px solid var(--sage-300);opacity:0;transform:translateX(-6px);
+  display:grid;place-items:center;background:var(--cream-50);
+  transition:opacity var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-out),
+             background var(--dur-fast),border-color var(--dur-fast);
+}
+.phone.selecting .msg .selbox{opacity:1;transform:translateX(0)}
+.msg.picked .selbox{background:var(--sage-500);border-color:var(--sage-500)}
+.msg .selbox svg{opacity:0;transition:opacity var(--dur-fast)}
+.msg.picked .selbox svg{opacity:1}
+
+/* 时间：不常驻，靠左滑露出 */
+.stamp{
+  position:absolute;right:-52px;top:50%;margin-top:-8px;width:46px;
+  font-size:11px;font-variant-numeric:tabular-nums;color:var(--ink-300);
+  opacity:0;pointer-events:none;
+}
+
+/* ── 用户气泡：沙绿浅填 + 1px 发丝描边 + 浅浮，指向角收到 8 ── */
+.bubblerow{display:flex;justify-content:flex-end}
+.bubble{
+  max-width:min(74%,300px);
+  background:var(--sage-100);border:1px solid var(--sage-200);
+  border-radius:20px;padding:10px 15px 11px;
+  font-size:16px;line-height:1.55;color:var(--ink-800);
+  box-shadow:var(--shadow-sm);
+  transition:transform var(--dur-fast) var(--ease-out),box-shadow var(--dur-fast) var(--ease-out),
+             border-radius var(--dur-base) var(--ease-gentle);
+  cursor:default;
+}
+.bubble.tail{border-bottom-right-radius:8px}
+.bubble:active{transform:translateY(1px);box-shadow:var(--shadow-xs)}
+.bubble.fresh{animation:lift var(--dur-slow) var(--ease-out) both}
+@keyframes lift{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
+
+/* 引用条：气泡上方一行，不是卡片 */
+.quoted{
+  max-width:min(74%,300px);margin:0 0 5px auto;padding-left:9px;
+  border-left:2px solid var(--sage-400);
+  font-size:12.5px;line-height:1.45;color:var(--ink-400);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;
+}
+
+/* 失败态：右下一枚朱红感叹，点开原位确认 */
+.failmark{display:flex;justify-content:flex-end;margin-top:5px}
+
+/* ═══════════════ Agent 回合脊 ═══════════════ */
+.turn{position:relative}
+.row{position:relative;padding-left:28px;min-height:22px}
+.row::before{
+  content:'';position:absolute;left:13px;top:0;bottom:0;width:0;
+  border-left:1px dashed var(--border-dash);
+}
+.row:first-child::before{top:11px}
+.row:last-child::before{bottom:auto;height:11px}
+.row.body::before{
+  border-left:1px solid var(--sage-300);border-left-style:solid;
+  top:0;bottom:6px;height:auto;
+  transform-origin:top;transform:scaleY(var(--grow,1));
+  transition:transform var(--dur-slower) var(--ease-out);
+}
+.glyph{
+  position:absolute;left:2px;top:0;width:22px;height:22px;border-radius:50%;
+  background:var(--paper-page);border:1px solid var(--sage-300);
+  display:grid;place-items:center;color:var(--sage-600);z-index:2;
+}
+.glyph.running{animation:glyphBreathe 1.5s var(--ease-standard) infinite}
+@keyframes glyphBreathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.86);opacity:.62}}
+.glyph.err{border-color:var(--rose-500);color:var(--danger)}
+/* 回合收尾：脊末端落定成一枚实心墨点 */
+.glyph.settled{width:9px;height:9px;left:9px;top:6px;background:var(--sage-500);border-color:var(--sage-500)}
+
+.rowbody{padding:1px 0 12px}
+.row.body .rowbody{padding-bottom:2px}
+
+/* trace 行：单行，无背景卡、无虚线框 */
+.trace-hd{
+  display:flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink-400);
+  cursor:pointer;user-select:none;
+}
+.trace-hd .tgt{font-size:12.5px;color:var(--ink-300)}
+.trace-hd .chev{transition:transform var(--dur-base) var(--ease-gentle);opacity:.6}
+.trace.open .chev{transform:rotate(90deg)}
+.trace-detail{
+  max-height:0;overflow:hidden;opacity:0;filter:blur(3px);
+  font-size:13px;line-height:1.7;color:var(--ink-500);
+  transition:max-height var(--dur-slow) var(--ease-gentle),opacity var(--dur-base) var(--ease-standard),
+             filter var(--dur-base) var(--ease-standard);
+}
+.trace.open .trace-detail{max-height:200px;opacity:1;filter:blur(0);margin-top:6px}
+/* running：文字骨架扫光（DS 明写：不做跳点） */
+.shimmer{
+  background:linear-gradient(100deg,var(--ink-400) 34%,var(--sage-400) 50%,var(--ink-400) 66%);
+  background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:sweep 1.9s linear infinite;
+}
+@keyframes sweep{from{background-position:180% 0}to{background-position:-80% 0}}
+
+/* Agent 正文：不做气泡，字直接落在纸上 */
+.body-text{font-size:16px;line-height:1.72;color:var(--ink-700)}
+.body-text .ch{
+  opacity:0;filter:blur(1.6px);
+  transition:opacity var(--dur-base) var(--ease-out),filter var(--dur-base) var(--ease-out);
+}
+.body-text .ch.in{opacity:1;filter:blur(0)}
+.caret{
+  display:inline-block;width:2px;height:15px;background:var(--sage-600);
+  vertical-align:-2px;margin-left:2px;border-radius:1px;
+  animation:caretBreathe 1.15s var(--ease-standard) infinite;
+}
+@keyframes caretBreathe{0%,100%{opacity:1}50%{opacity:.24}}
+.turnfoot{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink-300);
+  font-variant-numeric:tabular-nums;padding-left:28px;margin-top:2px}
+.broke{font-size:13px;color:var(--ink-400);margin-top:6px;cursor:pointer}
+.broke u{text-decoration-style:dashed;text-underline-offset:3px}
+
+/* ═══════════════ 盖章审批：一行 + 一枚印，长按蓄力 ═══════════════ */
+.approve{
+  display:flex;align-items:center;gap:12px;padding:9px 0 12px;
+}
+.approve .txt{flex:1;min-width:0}
+.approve .t1{font-size:14.5px;font-weight:600;color:var(--ink-800);line-height:1.4}
+.approve .t2{font-size:12.5px;color:var(--ink-400);margin-top:2px}
+.approve.danger .t1{color:var(--danger)}
+.deny{
+  border:0;background:transparent;font:inherit;font-size:13px;color:var(--ink-400);cursor:pointer;
+  padding:2px 0;border-bottom:1px dashed var(--ink-300);
+}
+.stamp-btn{
+  position:relative;width:46px;height:46px;flex:none;border:0;background:transparent;
+  cursor:pointer;display:grid;place-items:center;touch-action:none;
+}
+.stamp-btn img{
+  width:34px;height:34px;object-fit:contain;
+  transition:transform var(--dur-base) var(--ease-out),opacity var(--dur-base);
+}
+.stamp-btn.charging img{transform:scale(.84) translateY(2px)}
+.stamp-btn .ring{position:absolute;inset:0;transform:rotate(-90deg);pointer-events:none}
+.stamp-btn .ring circle{
+  fill:none;stroke:var(--sage-500);stroke-width:1.6;stroke-linecap:round;
+  stroke-dasharray:126;stroke-dashoffset:126;
+}
+.approve.danger .stamp-btn .ring circle{stroke:var(--rose-500)}
+.stamp-btn.stamped img{transform:scale(1.04);opacity:.42}
+.approve.done .deny,.approve.done .hint{display:none}
+.stamp-hint{font-size:11px;color:var(--ink-300);text-align:center;margin-top:1px}
+
+/* ═══════════════ 原位展开二次确认（全页复用）═══════════════ */
+.inline-confirm{
+  display:inline-flex;align-items:center;gap:0;height:34px;padding:0 7px;
+  border:1px solid transparent;border-radius:999px;background:transparent;
+  color:var(--ink-500);font:inherit;font-size:14px;cursor:pointer;overflow:hidden;
+  transition:background var(--dur-base) var(--ease-standard),color var(--dur-base) var(--ease-standard),
+             border-color var(--dur-base) var(--ease-standard),padding var(--dur-base) var(--ease-gentle);
+}
+.inline-confirm .lbl{
+  max-width:0;opacity:0;white-space:nowrap;
+  transition:max-width var(--dur-slow) var(--ease-gentle),opacity var(--dur-fast) var(--ease-standard),
+             margin-left var(--dur-slow) var(--ease-gentle);
+}
+.inline-confirm.armed{background:var(--danger-wash);border-color:var(--rose-400);color:var(--danger);padding:0 12px 0 9px}
+.inline-confirm.armed .lbl{max-width:110px;opacity:1;margin-left:6px}
+.inline-confirm.tone-sage.armed{background:var(--sage-100);border-color:var(--sage-300);color:var(--sage-700)}
+
+/* ═══════════════ 空状态 ═══════════════ */
+.empty{display:none;flex-direction:column;align-items:center;text-align:center;padding:70px 34px 0;gap:9px}
+.phone.empty-on .empty{display:flex}
+.phone.empty-on .reel > *:not(.empty){display:none}
+.empty h2{margin:0;font-size:21px;font-weight:650;color:var(--ink-800)}
+.empty p{margin:0;font-size:13.5px;color:var(--ink-400)}
+.empty .seeds{margin-top:22px;display:flex;flex-direction:column;gap:13px;width:100%}
+.empty .seed{font-size:14.5px;color:var(--sage-700);cursor:pointer;
+  border-bottom:1px dashed var(--sage-300);padding-bottom:6px}
+/* 「祐」字书写：页面级加载动画（原 Thinking 图标，2026-08-03 祐祐改用途） */
+.youglyph{display:block;margin:0 auto 6px}
+
+/* ═══════════════ 页面级状态：加载 / 网络异常 ═══════════════ */
+.pagestate{
+  position:absolute;inset:0;z-index:45;display:none;
+  flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  background:var(--paper-page);padding:0 40px 90px;text-align:center;
+}
+.phone.page-loading .pagestate,.phone.page-error .pagestate{display:flex}
+.pagestate h2{margin:6px 0 0;font-size:18px;font-weight:650;color:var(--ink-800)}
+.pagestate p{margin:0;font-size:13.5px;color:var(--ink-400);line-height:1.6}
+.pagestate .retry{
+  margin-top:16px;padding:9px 22px;border-radius:999px;
+  border:1.5px dashed var(--sage-400);background:transparent;
+  font:inherit;font-size:14.5px;color:var(--sage-700);cursor:pointer;
+  transition:background var(--dur-base),transform var(--dur-fast) var(--ease-out);
+}
+.pagestate .retry:hover{background:var(--sage-50)}
+.pagestate .retry:active{transform:translateY(1px)}
+.phone.page-error .pagestate .loadonly{display:none}
+.phone.page-loading .pagestate .erroronly{display:none}
+#motionHost{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;border:0;left:-9999px}
+
+/* ═══════════════ 输入信笺 ═══════════════ */
+.composer{
+  flex:none;padding:8px 14px 34px;position:relative;z-index:25;
+  transition:opacity var(--dur-base),transform var(--dur-base) var(--ease-out);
+}
+.phone.selecting .composer{opacity:0;transform:translateY(14px);pointer-events:none}
+.sheet{
+  background:var(--cream-50);border:1px solid var(--border-hair);border-radius:var(--radius-2xl);
+  box-shadow:var(--shadow-md);padding:11px 12px 10px;
+}
+.replybar{
+  display:flex;align-items:center;gap:8px;max-height:0;overflow:hidden;opacity:0;
+  padding-left:9px;border-left:2px solid var(--sage-400);margin-left:2px;
+  transition:max-height var(--dur-slow) var(--ease-gentle),opacity var(--dur-base),margin-bottom var(--dur-slow);
+}
+.phone.replying .replybar{max-height:40px;opacity:1;margin-bottom:9px}
+.replybar .rt{flex:1;min-width:0;font-size:12.5px;color:var(--ink-400);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.attachbar{display:flex;gap:8px;max-height:0;overflow:hidden;opacity:0;
+  transition:max-height var(--dur-slow) var(--ease-gentle),opacity var(--dur-base),margin-bottom var(--dur-slow)}
+.phone.hasattach .attachbar{max-height:70px;opacity:1;margin-bottom:9px}
+.thumb{position:relative;width:54px;height:54px;border-radius:12px;flex:none;
+  background:linear-gradient(140deg,var(--sage-200),var(--cream-400));border:1px solid var(--border-hair)}
+.thumb .x{position:absolute;right:-5px;top:-5px;width:19px;height:19px;border-radius:50%;
+  background:var(--ink-600);color:var(--cream-50);display:grid;place-items:center;cursor:pointer;font-size:11px}
+.inputrow{display:flex;align-items:flex-end;gap:8px}
+.plus{
+  width:34px;height:34px;flex:none;border:0;border-radius:50%;background:var(--sage-100);
+  color:var(--sage-700);display:grid;place-items:center;cursor:pointer;
+  transition:transform var(--dur-slow) var(--ease-gentle),background var(--dur-base);
+}
+.phone.attaching .plus{transform:rotate(45deg);background:var(--sage-200)}
+.attmenu{display:flex;align-items:center;gap:6px;overflow:hidden;max-width:0;
+  transition:max-width var(--dur-slow) var(--ease-gentle)}
+.phone.attaching .attmenu{max-width:132px}
+.attmenu button{
+  width:34px;height:34px;flex:none;border:1px solid var(--border-hair);border-radius:50%;
+  background:var(--cream-100);color:var(--ink-500);display:grid;place-items:center;cursor:pointer;
+  opacity:0;transform:translateX(-14px) scale(.6);
+  transition:opacity var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-hover);
+}
+.phone.attaching .attmenu button{opacity:1;transform:none}
+.phone.attaching .attmenu button:nth-child(1){transition-delay:20ms}
+.phone.attaching .attmenu button:nth-child(2){transition-delay:70ms}
+.phone.attaching .attmenu button:nth-child(3){transition-delay:120ms}
+.field{
+  flex:1;min-width:0;border:0;outline:0;background:transparent;font:inherit;font-size:16px;
+  color:var(--ink-800);resize:none;line-height:1.5;max-height:110px;padding:7px 2px;
+}
+.field::placeholder{color:var(--ink-300)}
+.sendbtn{
+  position:relative;width:38px;height:38px;flex:none;border:0;border-radius:50%;
+  background:var(--sage-500);color:var(--cream-50);display:grid;place-items:center;cursor:pointer;
+  transition:background var(--dur-base) var(--ease-standard),transform var(--dur-fast) var(--ease-out),opacity var(--dur-base);
+}
+.sendbtn:disabled{opacity:.38;cursor:default}
+.sendbtn:active:not(:disabled){transform:scale(.92)}
+.sendbtn.stop{background:var(--cream-100);color:var(--danger);border:1px solid var(--rose-400)}
+.sendbtn .spin{position:absolute;inset:-4px;opacity:0;transition:opacity var(--dur-base)}
+.sendbtn.stop .spin{opacity:1;animation:spin 5.5s linear infinite}
+.sendbtn .spin circle{fill:none;stroke:var(--rose-400);stroke-width:1.2;
+  stroke-dasharray:3 5;stroke-linecap:round}
+@keyframes spin{to{transform:rotate(360deg)}}
+.attach-note{font-size:11.5px;color:var(--ink-300);padding:7px 0 0 12px;
+  max-height:0;overflow:hidden;opacity:0;transition:max-height var(--dur-slow),opacity var(--dur-base)}
+.attach-note.show{max-height:24px;opacity:1}
+
+/* ═══════════════ 多选工具条 ═══════════════ */
+.selbar{
+  position:absolute;left:50%;bottom:44px;transform:translate(-50%,26px);
+  display:flex;align-items:center;gap:4px;padding:5px 8px;border-radius:999px;
+  background:rgba(251,250,245,.82);backdrop-filter:blur(18px) saturate(1.5);
+  border:1px solid var(--border-hair);box-shadow:var(--shadow-lg);
+  opacity:0;pointer-events:none;z-index:40;
+  transition:opacity var(--dur-base) var(--ease-standard),transform var(--dur-slow) var(--ease-gentle);
+}
+.phone.selecting .selbar{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.selbar .cnt{font-size:13px;color:var(--ink-400);padding:0 7px;font-variant-numeric:tabular-nums}
+.selbar .plain{border:0;background:transparent;font:inherit;font-size:14px;color:var(--sage-700);
+  cursor:pointer;padding:0 9px;height:34px;border-radius:999px}
+
+/* ═══════════════ 搜索命中丸 ═══════════════ */
+.hitpill{
+  position:absolute;left:50%;bottom:46px;transform:translate(-50%,20px);
+  display:flex;align-items:center;gap:2px;padding:4px 6px 4px 12px;border-radius:999px;
+  background:rgba(251,250,245,.86);backdrop-filter:blur(18px) saturate(1.5);
+  border:1px solid var(--border-hair);box-shadow:var(--shadow-lg);
+  font-size:13px;color:var(--ink-500);font-variant-numeric:tabular-nums;
+  opacity:0;pointer-events:none;z-index:40;
+  transition:opacity var(--dur-base),transform var(--dur-slow) var(--ease-gentle);
+}
+.phone.searching .hitpill{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.hitpill button{width:30px;height:30px;border:0;background:transparent;border-radius:50%;
+  color:var(--sage-700);cursor:pointer;display:grid;place-items:center}
+mark{background:var(--sage-200);color:inherit;border-radius:3px;padding:0 1px}
+.flash{animation:flash 900ms var(--ease-out)}
+@keyframes flash{0%{background:var(--gold-200)}100%{background:transparent}}
+
+/* ═══════════════ 控制台 ═══════════════ */
+.panel{width:250px;flex:none;color:#EDEDE6;font-size:13px;line-height:1.6;position:sticky;top:18px}
+.panel h1{font-size:15px;margin:0 0 4px;font-weight:700;letter-spacing:.4px}
+.panel .sub{opacity:.62;font-size:11.5px;margin-bottom:14px}
+.panel h3{font-size:11px;letter-spacing:1.2px;text-transform:uppercase;opacity:.55;
+  margin:16px 0 7px;font-weight:700}
+.panel button{
+  display:block;width:100%;text-align:left;margin-bottom:6px;padding:8px 11px;
+  border-radius:11px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.09);
+  color:#F3F3EE;font:inherit;font-size:13px;cursor:pointer;transition:background 140ms,transform 140ms;
+}
+.panel button:hover{background:rgba(255,255,255,.17)}
+.panel button:active{transform:translateY(1px)}
+.panel .k{opacity:.5;font-size:11px;float:right}
+.panel .note{font-size:11.5px;opacity:.6;margin-top:14px;line-height:1.65}
+</style>
+</head>
+<body>
+
+<div id="stage">
+<div class="phone" id="phone">
+
+  <!-- 状态栏（真机由系统画，这里只作指示） -->
+  <div class="statusbar">
+    <span>9:41</span>
+    <span class="right">▮▮▮ ᯤ 􀛨</span>
+  </div>
+
+  <!-- ══ 导航栏 ══ -->
+  <div class="navbar">
+    <button class="nav-btn" title="返回">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="nav-id" id="navId">
+      <span class="ava">灼</span>
+      <span class="nm">灼灼</span>
+      <span class="dot"></span>
+    </div>
+    <button class="nav-btn search" id="btnSearch" title="搜索">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    </button>
+
+    <div class="searchwrap">
+      <div class="searchfield">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-300)" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="searchInput" placeholder="在这段对话里找…" value="日历">
+      </div>
+      <button class="nav-cancel" id="btnCancelSearch">取消</button>
+    </div>
+  </div>
+
+  <!-- ══ 离线条 ══ -->
+  <div class="offline"><span class="pulse"></span>离线 · 正在重连</div>
+
+  <!-- ══ 会话卷轴 ══ -->
+  <div class="scroll" id="scroll">
+    <div class="reel" id="reel">
+
+      <!-- 空状态：「祐」字被一笔一笔写出来 -->
+      <div class="empty">
+        <canvas class="youglyph" id="youEmpty" width="150" height="150" style="width:150px;height:150px"></canvas>
+        <h2>今天想说点什么？</h2>
+        <p>在纸上，慢慢把心里的话写下来。</p>
+        <div class="seeds">
+          <div class="seed">帮我看看这周还剩几个空档</div>
+          <div class="seed">把刚才那段话记进公共档案</div>
+          <div class="seed">明早提醒我带伞</div>
+        </div>
+      </div>
+
+      <div class="daystamp">
+        <img src="assets/crane.png" alt="">
+        <span class="lbl">8月3日 · 周日</span>
+      </div>
+
+      <!-- 用户连发两条（分组：只有最后一条收角） -->
+      <div class="msg">
+        <div class="selbox"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FEFEFC" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+        <span class="stamp">14:28</span>
+        <div class="bubblerow"><div class="bubble">在吗</div></div>
+      </div>
+      <div class="msg grouped">
+        <div class="selbox"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FEFEFC" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+        <span class="stamp">14:28</span>
+        <div class="bubblerow"><div class="bubble tail">明天下午有空吗？想约个散步</div></div>
+      </div>
+
+      <!-- Agent 回合：脊贯穿 trace 与正文 -->
+      <div class="msg">
+        <div class="selbox"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FEFEFC" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+        <span class="stamp">14:29</span>
+        <div class="turn">
+          <div class="row trace" data-trace>
+            <span class="glyph"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+            <div class="rowbody">
+              <div class="trace-hd">
+                <span>想了 4 秒</span>
+                <svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+              </div>
+              <div class="trace-detail">先别拍脑袋应下来 —— 她说的是「明天下午」，得先看日历有没有排东西，顺手看一眼天气，散步这事下雨就不成立了。</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <span class="glyph"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
+            <div class="rowbody"><div class="trace-hd"><span>查看日历</span><span class="tgt">8月4日 · 下午</span></div></div>
+          </div>
+
+          <div class="row">
+            <span class="glyph"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
+            <div class="rowbody"><div class="trace-hd"><span>搜索天气</span><span class="tgt">河边 · 明日</span></div></div>
+          </div>
+
+          <div class="row body" id="bodyRow">
+            <span class="glyph running" id="bodyGlyph"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 20l4-1 9.5-9.5a2 2 0 0 0-3-3L5 16z"/></svg></span>
+            <div class="rowbody"><div class="body-text" id="bodyText"></div></div>
+          </div>
+        </div>
+        <div class="turnfoot" id="turnFoot" style="opacity:0">14:29 · 灼灼</div>
+      </div>
+
+      <!-- 用户消息 + 引用 + 失败态 -->
+      <div class="msg">
+        <div class="selbox"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FEFEFC" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+        <span class="stamp">14:31</span>
+        <div class="quoted">明天 14:00 之后都空着，要我先占一个位子吗？</div>
+        <div class="bubblerow"><div class="bubble tail">占 15:00 吧，顺便记进日历</div></div>
+        <div class="failmark" id="failMark" style="display:none">
+          <button class="inline-confirm armed-tone" id="btnFail">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.3" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.2v.1"/></svg>
+            <span class="lbl">重发这条</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Agent 回合：盖章审批 -->
+      <div class="msg">
+        <div class="selbox"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FEFEFC" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+        <div class="turn">
+          <div class="row trace">
+            <span class="glyph"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+            <div class="rowbody"><div class="trace-hd"><span class="shimmer">正在拟这条日程</span></div></div>
+          </div>
+          <div class="row" id="approveRow">
+            <span class="glyph"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v10M8 9l4 4 4-4M4 17v3h16v-3"/></svg></span>
+            <div class="rowbody">
+              <div class="approve" id="approveCard">
+                <div class="txt">
+                  <div class="t1">写入日历 · 河边散步</div>
+                  <div class="t2">8月4日 15:00–16:00 · 提前 15 分钟提醒</div>
+                  <div style="margin-top:7px"><button class="deny">先不了</button></div>
+                </div>
+                <div>
+                  <button class="stamp-btn" id="stampBtn">
+                    <svg class="ring" viewBox="0 0 46 46"><circle cx="23" cy="23" r="20"/></svg>
+                    <img src="assets/seal-sage.png" alt="盖章确认">
+                  </button>
+                  <div class="stamp-hint">按住盖章</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══ 输入信笺 ══ -->
+  <div class="composer">
+    <div class="sheet">
+      <div class="replybar">
+        <span class="rt">明天 14:00 之后都空着，要我先占一个位子吗？</span>
+        <svg id="dropReply" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-400)" stroke-width="2.4" stroke-linecap="round" style="cursor:pointer;flex:none"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </div>
+      <div class="attachbar">
+        <div class="thumb"><span class="x" id="dropAttach">✕</span></div>
+      </div>
+      <div class="inputrow">
+        <button class="plus" id="btnPlus" title="附件">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <div class="attmenu">
+          <button title="相册" data-att>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5-9 9"/></svg>
+          </button>
+          <button title="相机" data-att>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5A2 2 0 0 1 5 6.5h2l1.4-2h7.2L17 6.5h2a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.4"/></svg>
+          </button>
+          <button title="文件" data-att>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+          </button>
+        </div>
+        <textarea class="field" id="field" rows="1" placeholder="今天想说点什么？"></textarea>
+        <button class="sendbtn" id="sendBtn" disabled>
+          <svg class="spin" viewBox="0 0 46 46"><circle cx="23" cy="23" r="21"/></svg>
+          <svg id="sendIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+        </button>
+      </div>
+      <div class="attach-note" id="attachNote">附件通道还没接上，这次只寄出了文字</div>
+    </div>
+  </div>
+
+  <!-- 多选工具条 -->
+  <div class="selbar">
+    <span class="cnt" id="selCount">已选 2 条</span>
+    <button class="plain" style="padding:0 6px" title="分享">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13M8 7l4-4 4 4"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
+    </button>
+    <button class="inline-confirm" id="btnDelSel">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/></svg>
+      <span class="lbl">删除 2 条</span>
+    </button>
+    <button class="plain" id="btnDoneSel">完成</button>
+  </div>
+
+  <!-- ══ 页面级状态：加载 / 网络异常 ══ -->
+  <div class="pagestate">
+    <canvas class="youglyph" id="youPage" width="180" height="180" style="width:180px;height:180px"></canvas>
+    <h2 class="loadonly">正在摊开这一页</h2>
+    <p class="loadonly">和灼灼的来往，正一笔一笔取回来。</p>
+    <h2 class="erroronly">这一页没能摊开</h2>
+    <p class="erroronly">连不上网关 · 检查一下网络<br>或者去「案头」看看地址和令牌</p>
+    <button class="retry erroronly">再试一次</button>
+  </div>
+
+  <!-- 搜索命中丸 -->
+  <div class="hitpill">
+    <span id="hitCount">2 / 3</span>
+    <button title="上一个"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 15l-6-6-6 6"/></svg></button>
+    <button title="下一个"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>
+  </div>
+
+  <!-- 「祐」字书写动画的宿主：直接复用 codex/line-animation-study 的自包含草样，
+       不改它一行代码（同源 iframe，取它的 drawDraft 用） -->
+  <iframe id="motionHost" src="you-writing.html" title="motion host"></iframe>
+</div>
+</div>
+
+<!-- ══════════ 控制台 ══════════ -->
+<div class="panel">
+  <h1>祐识 · Conversation Screen</h1>
+  <div class="sub">Phase 0 动效草样 · 440×956pt</div>
+
+  <h3>六个签名动作</h3>
+  <button data-act="stream">① 回合脊生长 + 洇墨显影<span class="k">1</span></button>
+  <button data-act="stamp">② 长按蓄力盖章（在机身上按住印）<span class="k">2</span></button>
+  <button data-act="select">③ 多选 + 原位展开删除<span class="k">3</span></button>
+  <button data-act="search">④ 导航栏原位变形搜索<span class="k">4</span></button>
+  <button data-act="attach">⑤ 附件原位展开<span class="k">5</span></button>
+  <button data-act="swipe">⑥ 左滑露时间（机身上左滑）<span class="k">6</span></button>
+
+  <h3>状态</h3>
+  <button data-act="reply">引用条进出</button>
+  <button data-act="fail">失败态 · 原位重发</button>
+  <button data-act="offline">离线条（会话内瞬时断网）</button>
+  <button data-act="empty">空状态（祐字书写）</button>
+  <button data-act="loading">页面级加载页（祐字书写）</button>
+  <button data-act="pageerror">页面级断网页（祐字 + 重试）</button>
+  <button data-act="danger">危险审批（朱印 · 蓄力 0.8s）</button>
+  <button data-act="reduce">减弱动效开关</button>
+
+  <div class="note">
+    气泡＝沙绿浅填＋1px 发丝描边＋浅浮，指向角收 8；连发只有最后一条收角。<br>
+    Agent 侧不做气泡，trace 与正文挂在同一条「回合脊」上。<br>
+    全页零 Alert：二次确认一律原位展开。<br><br>
+    「祐」字书写取自 <code>codex/line-animation-study</code>，
+    经 iframe 直取 <code>drawDraft</code>，未复制其代码。
+  </div>
+</div>
+
+<script>
+const $  = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+const phone = $('#phone');
+let reduced = false;
+
+/* ── 机身缩放：窄窗口下整体缩到放得下 ── */
+function fit(){
+  const s = Math.min(1,(window.innerHeight-36)/956);
+  $('#stage').style.transform = `scale(${s})`;
+  $('#stage').style.marginBottom = `${-(1-s)*956}px`;
+}
+addEventListener('resize',fit); fit();
+
+/* ═══════════ ① 回合脊生长 + 洇墨显影 ═══════════
+   逐 chunk 到达；新字符 opacity 0→1 / blur 1.6→0，
+   按索引微错峰（8ms，封顶 90ms）——不是打字机，是墨在纸上洇开。 */
+const REPLY = [
+  '我看了下日历，','明天 14:00 之后都空着。','天气也还行，',
+  '多云、26 度，','傍晚有一阵小风。\n','要我先占一个位子吗？'
+];
+let streamTimer = null;
+
+function replay(){
+  clearTimeout(streamTimer);
+  const box = $('#bodyText'), row = $('#bodyRow'), glyph = $('#bodyGlyph'), foot = $('#turnFoot');
+  box.innerHTML=''; foot.style.opacity='0';
+  glyph.classList.add('running');
+  glyph.classList.remove('settled');
+  row.style.setProperty('--grow', reduced ? 1 : 0);
+
+  requestAnimationFrame(()=>row.style.setProperty('--grow',1));
+
+  let i = 0;
+  const caret = document.createElement('span');
+  caret.className='caret';
+
+  const pump = () => {
+    if(i >= REPLY.length){
+      caret.remove();
+      glyph.classList.remove('running');
+      glyph.classList.add('settled');
+      foot.style.transition='opacity var(--dur-slow) var(--ease-out)';
+      foot.style.opacity='1';
+      return;
+    }
+    caret.remove();
+    const chunk = REPLY[i++];
+    const spans = [];
+    for(const c of chunk){
+      const s = document.createElement('span');
+      s.className='ch';
+      s.textContent = c==='\n' ? '\n' : c;
+      if(c==='\n') s.style.display='block';
+      box.appendChild(s); spans.push(s);
+    }
+    box.appendChild(caret);
+    requestAnimationFrame(()=>{
+      spans.forEach((s,n)=>{
+        if(reduced){ s.classList.add('in'); return; }
+        setTimeout(()=>s.classList.add('in'), Math.min(n*8,90));
+      });
+    });
+    $('#scroll').scrollTo({top:$('#scroll').scrollHeight,behavior:'smooth'});
+    streamTimer = setTimeout(pump, 360 + Math.random()*260);
+  };
+  streamTimer = setTimeout(pump, reduced?0:340);
+}
+
+/* ═══════════ ② 长按蓄力盖章 ═══════════
+   按住 → 印下压 + 进度环走满；松手过早 → 回弹。
+   二次确认变成一个物理动作，不弹任何窗。 */
+function wireStamp(){
+  const btn = $('#stampBtn'), ring = $('#stampBtn .ring circle'), card = $('#approveCard');
+  let t0=0, raf=0, done=false;
+  const need = ()=> card.classList.contains('danger') ? 800 : 400;
+  const LEN = 126;
+
+  const tick = ()=>{
+    const p = Math.min(1,(performance.now()-t0)/need());
+    ring.style.strokeDashoffset = LEN*(1-p);
+    if(p>=1){ fire(); return; }
+    raf = requestAnimationFrame(tick);
+  };
+  const start = e=>{
+    if(done) return; e.preventDefault();
+    btn.setPointerCapture?.(e.pointerId);
+    btn.classList.add('charging');
+    if(reduced){ fire(); return; }
+    t0 = performance.now(); ring.style.transition='none';
+    raf = requestAnimationFrame(tick);
+  };
+  const cancel = ()=>{
+    if(done) return;
+    cancelAnimationFrame(raf);
+    btn.classList.remove('charging');
+    ring.style.transition='stroke-dashoffset 160ms var(--ease-out)';
+    ring.style.strokeDashoffset = LEN;
+  };
+  const fire = ()=>{
+    done = true; cancelAnimationFrame(raf);
+    btn.classList.remove('charging'); btn.classList.add('stamped');
+    ring.style.transition='opacity 240ms'; ring.style.opacity='0';
+    card.classList.add('done');
+    $('.approve .t2').textContent = '已批准 · 14:32';
+    $('.stamp-hint').textContent = '';
+  };
+  btn.addEventListener('pointerdown',start);
+  btn.addEventListener('pointerup',cancel);
+  btn.addEventListener('pointercancel',cancel);
+  btn.addEventListener('pointerleave',cancel);
+}
+wireStamp();
+
+/* ═══════════ ③ 原位展开二次确认（全页复用）═══════════
+   点一下展开成「删除 N 条」，再点执行；点别处 / 3s 无操作收回。 */
+function wireInlineConfirm(el, onFire){
+  let timer=null;
+  el.addEventListener('click', e=>{
+    e.stopPropagation();
+    if(el.classList.contains('armed')){
+      clearTimeout(timer); el.classList.remove('armed'); onFire?.(); return;
+    }
+    $$('.inline-confirm.armed').forEach(o=>o.classList.remove('armed'));
+    el.classList.add('armed');
+    clearTimeout(timer);
+    timer = setTimeout(()=>el.classList.remove('armed'), 3000);
+  });
+}
+document.addEventListener('click',()=>$$('.inline-confirm.armed').forEach(o=>o.classList.remove('armed')));
+wireInlineConfirm($('#btnDelSel'), ()=>{
+  $$('.msg.picked').forEach(m=>{
+    m.style.transition='opacity var(--dur-base),transform var(--dur-base),max-height var(--dur-slow),margin var(--dur-slow)';
+    m.style.maxHeight=m.offsetHeight+'px';
+    requestAnimationFrame(()=>{
+      m.style.opacity='0'; m.style.transform='scale(.96)';
+      m.style.maxHeight='0'; m.style.margin='0'; m.style.overflow='hidden';
+    });
+  });
+  setTimeout(()=>phone.classList.remove('selecting'),320);
+});
+wireInlineConfirm($('#btnFail'));
+
+/* 多选：点消息切换选中 */
+$$('.msg').forEach(m=>{
+  m.addEventListener('click',()=>{
+    if(!phone.classList.contains('selecting')) return;
+    m.classList.toggle('picked');
+    const n = $$('.msg.picked').length;
+    $('#selCount').textContent = `已选 ${n} 条`;
+    $('#btnDelSel .lbl').textContent = `删除 ${n} 条`;
+  });
+});
+$('#btnDoneSel').onclick = ()=>{
+  phone.classList.remove('selecting');
+  $$('.msg.picked').forEach(m=>m.classList.remove('picked'));
+};
+
+/* ═══════════ ④ 导航栏原位变形搜索 ═══════════ */
+$('#btnSearch').onclick = ()=>{
+  phone.classList.add('searching');
+  setTimeout(()=>$('#searchInput').focus(),260);
+  markHits($('#searchInput').value);
+};
+$('#btnCancelSearch').onclick = ()=>{ phone.classList.remove('searching'); clearHits(); };
+$('#searchInput').addEventListener('input', e=>markHits(e.target.value));
+
+function clearHits(){
+  $$('mark').forEach(m=>m.replaceWith(document.createTextNode(m.textContent)));
+  $$('.rowbody,.bubble').forEach(n=>n.normalize());
+}
+function markHits(q){
+  clearHits();
+  if(!q.trim()) { $('#hitCount').textContent='0 / 0'; return; }
+  let n=0;
+  const walk = root=>{
+    const it = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const jobs=[];
+    while(it.nextNode()){
+      const t=it.currentNode, i=t.data.indexOf(q);
+      if(i>=0 && t.data.trim()) jobs.push([t,i]);
+    }
+    jobs.forEach(([t,i])=>{
+      const tail=t.splitText(i); tail.splitText(q.length);
+      const m=document.createElement('mark'); m.textContent=tail.data;
+      tail.replaceWith(m); n++;
+    });
+  };
+  $$('.bubble,.body-text,.trace-detail').forEach(walk);
+  $('#hitCount').textContent = n?`1 / ${n}`:'0 / 0';
+  const first = $('mark');
+  if(first){
+    first.closest('.msg')?.scrollIntoView({block:'center',behavior:'smooth'});
+    const host = first.closest('.bubble,.rowbody');
+    host?.classList.remove('flash'); void host?.offsetWidth; host?.classList.add('flash');
+  }
+}
+
+/* ═══════════ ⑤ 附件原位展开 ═══════════ */
+$('#btnPlus').onclick = ()=>phone.classList.toggle('attaching');
+$$('[data-att]').forEach(b=>b.onclick=()=>{
+  phone.classList.add('hasattach');
+  phone.classList.remove('attaching');
+});
+$('#dropAttach').onclick = ()=>phone.classList.remove('hasattach');
+
+/* ═══════════ ⑥ 左滑露时间（iMessage 手势）═══════════ */
+(function(){
+  const reel=$('#reel'); let x0=null, dx=0, dragging=false;
+  const MAX=56;
+  const apply=v=>{
+    reel.style.transform = `translateX(${(phone.classList.contains('selecting')?32:0) - v}px)`;
+    $$('.stamp').forEach(s=>s.style.opacity = Math.min(1, v/34));
+  };
+  reel.addEventListener('pointerdown',e=>{ x0=e.clientX; dragging=false; reel.style.transition='none'; });
+  reel.addEventListener('pointermove',e=>{
+    if(x0===null) return;
+    const raw = x0-e.clientX;
+    if(!dragging && Math.abs(raw)<8) return;
+    dragging=true;
+    dx = Math.max(0, Math.min(MAX, raw*0.85));
+    apply(dx);
+  });
+  const end=()=>{
+    if(x0===null) return;
+    x0=null; dx=0;
+    reel.style.transition='transform var(--dur-slow) var(--ease-gentle)';
+    reel.style.transform = phone.classList.contains('selecting')?'translateX(32px)':'';
+    $$('.stamp').forEach(s=>{ s.style.transition='opacity var(--dur-base)'; s.style.opacity=0; });
+  };
+  reel.addEventListener('pointerup',end);
+  reel.addEventListener('pointercancel',end);
+  reel.addEventListener('pointerleave',end);
+})();
+
+/* ── trace 行展开 ── */
+$$('[data-trace]').forEach(t=>{
+  $('.trace-hd',t).onclick = ()=>t.classList.toggle('open');
+});
+
+/* ── 输入与发送 ── */
+const field=$('#field'), send=$('#sendBtn');
+let streaming=false;
+field.addEventListener('input',()=>{
+  field.style.height='auto'; field.style.height=Math.min(110,field.scrollHeight)+'px';
+  send.disabled = !field.value.trim() && !streaming;
+});
+send.onclick = ()=>{
+  if(streaming){ setSending(false); return; }
+  const txt = field.value.trim(); if(!txt) return;
+  // 送出：文字从输入区抬到气泡位
+  const msg = document.createElement('div');
+  msg.className='msg';
+  msg.innerHTML = `<div class="selbox"></div><span class="stamp">14:33</span>
+    <div class="bubblerow"><div class="bubble tail fresh">${txt.replace(/</g,'&lt;')}</div></div>`;
+  $('#reel').appendChild(msg);
+  field.value=''; field.style.height='auto';
+  if(phone.classList.contains('hasattach')){
+    phone.classList.remove('hasattach');
+    const note=$('#attachNote'); note.classList.add('show');
+    setTimeout(()=>note.classList.remove('show'),2600);
+  }
+  phone.classList.remove('replying');
+  $('#scroll').scrollTo({top:$('#scroll').scrollHeight,behavior:'smooth'});
+  setSending(true);
+  setTimeout(()=>setSending(false), 4200);
+};
+function setSending(on){
+  streaming=on;
+  send.classList.toggle('stop',on);
+  send.disabled = !on && !field.value.trim();
+  $('#sendIcon').innerHTML = on
+    ? '<rect x="8" y="8" width="8" height="8" rx="1.6" fill="currentColor" stroke="none"/>'
+    : '<path d="M12 19V5M6 11l6-6 6 6"/>';
+}
+$('#dropReply').onclick = ()=>phone.classList.remove('replying');
+
+/* ═══════════ 「祐」字书写：页面级加载动画 ═══════════
+   2026-08-03 祐祐改用途：原为 Thinking 小图标，因视觉厚重、20–28pt 会并笔，
+   改作页面级 —— 新对话空状态 / 网络异常加载页 / 将来开屏。
+   这里直接取 codex/line-animation-study 自包含草样里的 drawDraft，
+   不复制它一行代码，保证草样与 Swift 侧常量始终同源。 */
+(function(){
+  const CYCLE = 9.3;                       // DraftingMotion.cycle（v10 定稿）
+  const targets = [
+    {cv:$('#youEmpty'), on:()=>phone.classList.contains('empty-on')},
+    {cv:$('#youPage'),  on:()=>phone.classList.contains('page-loading')
+                              || phone.classList.contains('page-error')},
+  ];
+  let drawDraft = null;
+  $('#motionHost').addEventListener('load', e=>{
+    try { drawDraft = e.target.contentWindow.drawDraft; }
+    catch(err){ console.warn('取不到 drawDraft：', err); }
+  });
+
+  const dpr = Math.min(3, window.devicePixelRatio || 2);
+  targets.forEach(t=>{
+    const css = parseInt(t.cv.style.width, 10);
+    t.cv.width = t.cv.height = css * dpr;
+    t.px = css;
+  });
+
+  const tick = now=>{
+    requestAnimationFrame(tick);
+    if(!drawDraft) return;
+    const phase = reduced ? 0.71 : ((now/1000) % CYCLE) / CYCLE;  // 减弱动效：停在写完那一帧
+    for(const t of targets){
+      if(!t.on()) continue;
+      const ctx = t.cv.getContext('2d');
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+      ctx.clearRect(0,0,t.px,t.px);
+      drawDraft(ctx, t.px, phase, false);
+    }
+  };
+  requestAnimationFrame(tick);
+})();
+
+/* ── 控制台 ── */
+const ACTS = {
+  stream : replay,
+  stamp  : ()=>$('#approveRow').scrollIntoView({block:'center',behavior:'smooth'}),
+  select : ()=>{ phone.classList.toggle('selecting'); },
+  search : ()=>{ phone.classList.contains('searching') ? $('#btnCancelSearch').click() : $('#btnSearch').click(); },
+  attach : ()=>phone.classList.toggle('attaching'),
+  swipe  : ()=>{
+    const reel=$('#reel');
+    reel.style.transition='transform var(--dur-slow) var(--ease-gentle)';
+    reel.style.transform='translateX(-56px)';
+    $$('.stamp').forEach(s=>{s.style.transition='opacity var(--dur-base)';s.style.opacity=1});
+    setTimeout(()=>{ reel.style.transform=''; $$('.stamp').forEach(s=>s.style.opacity=0); },1500);
+  },
+  reply  : ()=>phone.classList.toggle('replying'),
+  fail   : ()=>{ const f=$('#failMark'); f.style.display = f.style.display==='none'?'flex':'none'; },
+  offline: ()=>phone.classList.toggle('offline-on'),
+  empty  : ()=>phone.classList.toggle('empty-on'),
+  loading: ()=>{ phone.classList.remove('page-error'); phone.classList.toggle('page-loading'); },
+  pageerror:()=>{ phone.classList.remove('page-loading'); phone.classList.toggle('page-error'); },
+  danger : ()=>{
+    const c=$('#approveCard');
+    c.classList.toggle('danger');
+    const on=c.classList.contains('danger');
+    $('.approve .t1').textContent = on?'删除这条记忆？':'写入日历 · 河边散步';
+    $('.approve .t2').textContent = on?'「不吃香菜」将从公共档案移除 · 不可恢复'
+                                      :'8月4日 15:00–16:00 · 提前 15 分钟提醒';
+    $('.stamp-btn img').src = on?'assets/seal-rose.png':'assets/seal-sage.png';
+    $('.stamp-hint').textContent = on?'按住 0.8 秒':'按住盖章';
+  },
+  reduce : ()=>{ reduced=!reduced; alert(reduced?'已切到减弱动效：全部退成一次性淡入':'已恢复完整动效'); },
+};
+$$('.panel button').forEach(b=>b.onclick=()=>ACTS[b.dataset.act]?.());
+addEventListener('keydown',e=>{
+  const map={'1':'stream','2':'stamp','3':'select','4':'search','5':'attach','6':'swipe'};
+  if(map[e.key]) ACTS[map[e.key]]();
+});
+
+replay();
+</script>
+</body>
+</html>

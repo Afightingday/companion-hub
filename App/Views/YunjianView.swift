@@ -67,7 +67,7 @@ struct YunjianView: View {
         .navigationDestination(for: Route.self) { route in
             switch route {
             case .contact(let item):
-                ChatView(item: item)
+                ChatScreen(item: item)
             case .group:
                 ComingSoonPlain(text: "群聊在第 3 批迁进来（说话人多路复用）；先用网页版")
             }
