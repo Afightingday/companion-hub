@@ -704,7 +704,7 @@ private struct ChatPinAnchor: ViewModifier {
                 .padding(.top, 16)
                 .onGeometryChange(for: CGFloat.self) {
                     $0.frame(in: .scrollView).minY
-                } action: onY
+                } action: { onY($0) }
         } else {
             content
         }
