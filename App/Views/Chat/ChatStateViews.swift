@@ -98,3 +98,28 @@ struct ChatSelectionBar: View {
         .accessibilityLabel(label)
     }
 }
+
+/// 「在想了」——寄出之后、第一个字之前的那一两秒里唯一的动静。
+///
+/// 刻意不写字：`状态不写字` 是定过的口径（只报失败）。这里只是一枚呼吸的墨点，
+/// 大小跟正文行高同量级，不占版面、不成卡片。一有内容或过程链就让位。
+struct ChatThinkingDot: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var breathing = false
+
+    var body: some View {
+        Circle()
+            .fill(YY.ink300)
+            .frame(width: 7, height: 7)
+            .scaleEffect(breathing ? 1 : 0.55)
+            .opacity(breathing ? 0.9 : 0.35)
+            .frame(height: 22, alignment: .center)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.62).repeatForever(autoreverses: true)) {
+                    breathing = true
+                }
+            }
+            .accessibilityLabel("正在回想")
+    }
+}

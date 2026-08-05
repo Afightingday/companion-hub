@@ -50,6 +50,9 @@ struct ChatScreen: View {
     /// 整点锚存在一个普通对象里，**不是 @State 值**——
     /// 滚动时 y 每帧都在变，写进 @State 会每帧重建 body，白烧一整页的布局。
     @State private var timeAnchors = ChatTimeAnchors()
+    /// 真实安全区与键盘高度。这一页所在的 hosting 树把安全区抹平了，
+    /// 拿不到系统的避让，只能自己从窗口取（见 ChatChrome）。
+    @State private var chrome = ChatChrome()
 
     private let seeds = ["明早提醒我去河边", "这周我都干了什么", "把妈妈的腌菜方子记下来"]
 
@@ -72,6 +75,9 @@ struct ChatScreen: View {
                 onCommitName: commitName,
                 onChangeAvatar: { flash("头像换图还没接上") }
             )
+            // 顶栏自己让开刘海 / 灵动岛：这棵树里 safeAreaInsets 已经是 0，
+            // 不补的话名字会被灵动岛压住（b28 真机）
+            .padding(.top, chrome.safeTop)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
 
             if let toast {
@@ -80,11 +86,16 @@ struct ChatScreen: View {
             }
         }
         // 输入胶囊悬浮在卷轴之上 —— 走 overlay 而不是 safeAreaInset，
-        // 才不会在底下垫出一条实色衬底；键盘避让照旧由安全区自动给。
+        // 才不会在底下垫出一条实色衬底。
+        // ⚠️ 原来这里写着「键盘避让照旧由安全区自动给」，**那个前提不成立**：
+        // 这一页所在的 hosting 树安全区已被抹平，overlay 拿不到任何避让。
+        // 避让改由 ChatChrome 听键盘通知自己算，见 bottomBar 的 padding。
         .overlay(alignment: .bottom) { bottomBar }
         .background(YY.page)
         .toolbar(.hidden, for: .navigationBar)
         .animation(.sceneStandard(0.24), value: toast)
+        .onAppear { chrome.start() }
+        .onDisappear { chrome.stop() }
         .task {
             if session == nil {
                 let made = ChatSession(client: model.client, item: item)
@@ -194,8 +205,22 @@ struct ChatScreen: View {
                 )
             }
         }
-        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, _ in
-            pulseTimePill()
+        // ⚠️ 这个回调**每帧**都响。原来它每帧都做三件事：算一遍可见整点、写两个
+        // @State、再 cancel 掉旧 Task 建一个新 Task —— 等于滚动时每帧重建一次 body
+        // 外加一次任务调度。b28 真机上就是这条让整页发涩。
+        // 现在每帧只做「位移够不够 8 点」这一次比较，绝大多数帧到这里就返回了。
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
+            guard abs(y - timeAnchors.lastOffset) > 8 else { return }
+            timeAnchors.lastOffset = y   // 存在非 @Observable 的盒子里，写它不触发重绘
+            refreshTimeLabel()
+        }
+        // 显隐交给滚动相位：手一停就排一次隐藏，不再每帧排
+        .onScrollPhaseChange { _, phase in
+            if phase == .idle {
+                scheduleHideTimePill()
+            } else {
+                showTimePill()
+            }
         }
     }
 
@@ -282,7 +307,11 @@ struct ChatScreen: View {
                 .padding(.horizontal, 12)
             }
         }
-        .padding(.bottom, 8)
+        // 键盘弹起时贴着键盘上沿浮，收起时让开 home 指示条。
+        // **这一层不能省**：overlay 拿不到系统的键盘避让（这棵 hosting 树的安全区
+        // 已经被抹平），原来那句"键盘避让照旧由安全区自动给"的前提不成立 ——
+        // b28 真机上键盘一弹，整条胶囊就被盖住了。
+        .padding(.bottom, chrome.bottomInset + 8)
         .animation(.sceneHover(0.28), value: mode)
         // 卷轴按这个高度留出底部余量，最后一条才不会藏在胶囊底下
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dockHeight = $0 }
@@ -401,11 +430,21 @@ struct ChatScreen: View {
         return all.min(by: { $0.y < $1.y })?.label ?? ""
     }
 
-    private func pulseTimePill() {
+    /// 只在字**真的变了**的时候写 @State。滚动中绝大多数帧都在这里空转返回。
+    private func refreshTimeLabel() {
         let label = visibleTimeLabel
-        guard !label.isEmpty else { return }
-        if timeLabel != label { timeLabel = label }
+        guard !label.isEmpty, label != timeLabel else { return }
+        timeLabel = label
+    }
+
+    private func showTimePill() {
+        timeTask?.cancel()
+        timeTask = nil
+        refreshTimeLabel()
         if !timeVisible { timeVisible = true }
+    }
+
+    private func scheduleHideTimePill() {
         timeTask?.cancel()
         timeTask = Task {
             try? await Task.sleep(for: .milliseconds(1200))
@@ -428,6 +467,9 @@ struct ChatScreen: View {
 /// 整点锚的容身处。刻意不是 @Observable：写它不该触发重绘。
 final class ChatTimeAnchors {
     var items: [String: (y: CGFloat, label: String)] = [:]
+    /// 上一次真正处理过的滚动位移，用来把每帧回调掐成每 8 点一次。
+    /// 同样放这儿：它一帧变一次，进 @State 就等于每帧重建 body。
+    var lastOffset: CGFloat = .infinity
 }
 
 // MARK: - 卷轴顶端的两个小行

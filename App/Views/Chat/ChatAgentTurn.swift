@@ -45,6 +45,14 @@ struct ChatAgentTurn: View {
                     .opacity(dimmed ? 0.42 : 1)
             }
 
+            // 寄出之后、第一个字之前，整页是**空的** —— 你的话没有任何状态标记
+            //（「寄出中什么都不显示」是定过的口径，不动），祐识这边还没开口，
+            // 于是点完发送要空等一两秒，手感就是"卡住了"。这里补一枚无字的呼吸墨点：
+            // 不写字，不占版面，一有内容或过程链就让位。
+            if streaming, shownText.isEmpty, !hasTrace {
+                ChatThinkingDot()
+            }
+
             if !shownText.isEmpty || streaming {
                 ChatMessageRow(
                     message: bodyMessage,
