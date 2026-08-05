@@ -13,10 +13,15 @@ packages:
   # 流式 Markdown 渲染内核（微软官方，MIT）。会话页正文归它渲染 ——
   # 逐词淡入只重绘新来的那一截、半截 `**加粗` 会预判成粗体所以不跳版，
   # 这两件是「换个产品也需要」的通用内核，按 CLAUDE.md 第 0 条一律借不自研。
-  # **钉死版本**：0.x 阶段接口会变，别用 from: / majorVersion。
+  #
+  # **钉的是提交，不是版本号** —— 这不是洁癖，是 SPM 逼的：它自己把 highlightswift
+  # 和 iosMath 钉在裸提交上，而 SPM 不允许「按版本号引用的包」再去依赖「按提交引用的包」，
+  # 写 exactVersion: 0.7.0 会直接解不出依赖图（2026-08-05 CI 实证：
+  # "required using a stable-version but depends on an unstable-version package"）。
+  # 改按提交引用之后这条约束不适用。这个哈希 = tag v0.7.0，升级＝人看过 diff 再换哈希。
   SwiftStreamingMarkdown:
     url: https://github.com/microsoft/SwiftStreamingMarkdown
-    exactVersion: 0.7.0
+    revision: 5f7c04e0558df6146f90d482edb62cb456986bda
 
 settings:
   base:

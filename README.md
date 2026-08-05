@@ -53,10 +53,12 @@ swift test --package-path Core
 ## 第三方依赖
 
 - [`microsoft/SwiftStreamingMarkdown`](https://github.com/microsoft/SwiftStreamingMarkdown)
-  `v0.7.0`（MIT）—— 会话页正文的流式 Markdown 渲染内核。选它是因为流式排版真正难的
+  `5f7c04e`（= tag v0.7.0，MIT）—— 会话页正文的流式 Markdown 渲染内核。选它是因为流式排版真正难的
   两件事都不是祐识特有的：**只对新追加的那段逐词淡入**（UITextView + CADisplayLink），
   以及**把吐到一半的 `**加粗` 投机重写成粗体**，好让下一个 token 到达时不整段重排。
-  按 CLAUDE.md 第 0 条借内核、不自研。0.x 阶段接口会变，**版本钉死**，升级要人看过再改。
+  按 CLAUDE.md 第 0 条借内核、不自研。**钉的是提交哈希不是版本号**——它自己把
+  `highlightswift` / `iosMath` 钉在裸提交上，SPM 不许「按版本号引用的包」再依赖
+  「按提交引用的包」，写 `exactVersion` 解不出依赖图。升级＝人看过 diff 再换哈希。
   它带进来的传递依赖：`swift-markdown`(cmark-gfm)、`HighlightSwift`、`iosMath`、
   `SwiftUI-Shimmer`、`ordo-one/equatable`（Swift 宏，故 CI 编译带 `-skipMacroValidation`）。
   纸面配色在 `App/Views/Chat/ChatMarkdown.swift` 里一次性配好，不散落各处。
