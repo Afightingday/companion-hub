@@ -28,7 +28,6 @@ struct ChatScreen: View {
     @State private var picked: Set<String> = []
     @State private var confirmDeleteMany = false
     @State private var pendingDelete: String?
-    @State private var pendingRetry: UiMessage?
     @State private var shareText: String?
 
     // 搜索
@@ -48,9 +47,6 @@ struct ChatScreen: View {
     @State private var toastTask: Task<Void, Never>?
     @State private var versionIndex: [String: Int] = [:]
     @State private var highlighted: String?
-    /// 当前 hosting 树已经提供的底部 inset（含键盘变化）。ChatChrome 只补差值，
-    /// 不能再把完整键盘高度叠上来。
-    @State private var systemBottomInset: CGFloat = 0
     /// 整点锚存在一个普通对象里，**不是 @State 值**——
     /// 滚动时 y 每帧都在变，写进 @State 会每帧重建 body，白烧一整页的布局。
     @State private var timeAnchors = ChatTimeAnchors()
@@ -61,39 +57,43 @@ struct ChatScreen: View {
     private let seeds = ["明早提醒我去河边", "这周我都干了什么", "把妈妈的腌菜方子记下来"]
 
     var body: some View {
-        ZStack(alignment: .top) {
-            ChatBackdrop()
+        // 根 GeometryReader 是尺寸庄家：子视图再宽也只能在这个视口里排，不能把
+        // fullScreenCover 的根 ZStack 撑宽后居中裁掉左右内容/错开命中坐标。
+        GeometryReader { viewport in
+            ZStack(alignment: .top) {
+                ChatBackdrop()
 
-            thread
-                .overlay(alignment: .top) {
-                    ChatTimePill(label: timeLabel, visible: timeVisible && mode != .select)
-                        .padding(.top, max(0, headerHeight - 34))
+                thread
+                    .overlay(alignment: .top) {
+                        ChatTimePill(label: timeLabel, visible: timeVisible && mode != .select)
+                            .padding(.top, max(0, headerHeight - 34))
+                    }
+
+                ChatHeaderBar(
+                    mode: $mode,
+                    name: $name,
+                    offline: !network.isOnline,
+                    pickedCount: picked.count,
+                    safeTop: chrome.safeTop,
+                    onBack: { if let onBack { onBack() } else { dismiss() } },
+                    onCommitName: commitName,
+                    onChangeAvatar: { flash("头像换图还没接上") }
+                )
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+
+                if let toast {
+                    ChatToast(text: toast)
+                        .padding(.top, headerHeight + 8)
                 }
-
-            ChatHeaderBar(
-                mode: $mode,
-                name: $name,
-                offline: !network.isOnline,
-                pickedCount: picked.count,
-                safeTop: chrome.safeTop,
-                onBack: { if let onBack { onBack() } else { dismiss() } },
-                onCommitName: commitName,
-                onChangeAvatar: { flash("头像换图还没接上") }
-            )
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
-
-            if let toast {
-                ChatToast(text: toast)
-                    .padding(.top, headerHeight + 8)
+            }
+            .frame(width: viewport.size.width, height: viewport.size.height, alignment: .top)
+            .clipped()
+            // 输入胶囊悬浮在卷轴之上。系统已给的 bottom inset 直接从尺寸庄家读取，
+            // ChatChrome 只补剩余差值。
+            .overlay(alignment: .bottom) {
+                bottomBar(systemBottomInset: viewport.safeAreaInsets.bottom)
             }
         }
-        // 输入胶囊悬浮在卷轴之上 —— 走 overlay 而不是 safeAreaInset，
-        // 才不会在底下垫出一条实色衬底。
-        // 宿主会给一部分键盘避让，具体多少由这里实量；底栏只补剩余差值。
-        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: {
-            systemBottomInset = max(0, $0)
-        }
-        .overlay(alignment: .bottom) { bottomBar(systemBottomInset: systemBottomInset) }
         .background(YY.page)
         .toolbar(.hidden, for: .navigationBar)
         .animation(.sceneStandard(0.24), value: toast)
@@ -145,27 +145,6 @@ struct ChatScreen: View {
                 }
             }
             Button("取消", role: .cancel) { pendingDelete = nil }
-        }
-        .confirmationDialog(
-            "重新回答这条问题？",
-            isPresented: Binding(get: { pendingRetry != nil }, set: { if !$0 { pendingRetry = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("重新回答") {
-                guard let message = pendingRetry else { return }
-                pendingRetry = nil
-                Task {
-                    guard let session else { return }
-                    if await session.retry(assistantId: message.id) {
-                        versionIndex[message.id] = nil
-                    } else {
-                        flash("重答没有继续，已按服务器记录重新载入")
-                    }
-                }
-            }
-            Button("取消", role: .cancel) { pendingRetry = nil }
-        } message: {
-            Text("当前回答会被替换；取消不会改动对话。")
         }
         .sheet(isPresented: Binding(get: { shareText != nil }, set: { if !$0 { shareText = nil } })) {
             if let shareText {
@@ -372,7 +351,12 @@ struct ChatScreen: View {
 
     private func retry(_ message: UiMessage) {
         guard let session, !session.isStreaming else { return }
-        pendingRetry = message
+        versionIndex[message.id] = nil
+        Task {
+            if !(await session.retry(assistantId: message.id)) {
+                flash("重答没有继续，已按服务器记录重新载入")
+            }
+        }
     }
 
     private func togglePick(_ id: String) {

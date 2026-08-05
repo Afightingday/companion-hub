@@ -47,9 +47,10 @@ struct ChatHeaderBar: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(YY.ink600)
                     .frame(width: 42, height: 42)
-                    .yyGlassControl(Circle())
             }
-            .buttonStyle(.plain)
+            // 首页同款真机已验证的原生玻璃 Button；不要把 interactive glass 挂在 label 上。
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .accessibilityLabel("返回")
 
             HStack(spacing: 12) {
@@ -140,9 +141,9 @@ struct ChatHeaderBar: View {
             }
             .frame(minWidth: 42, minHeight: 42)
             .padding(.horizontal, isContact ? 16 : 0)
-            .yyGlassControl(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.capsule)
         .accessibilityLabel(isContact ? "完成" : "搜索")
     }
 

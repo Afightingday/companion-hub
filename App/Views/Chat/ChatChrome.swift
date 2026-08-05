@@ -57,8 +57,8 @@ final class ChatChrome {
             forName: UIResponder.keyboardWillHideNotification,
             object: nil,
             queue: .main
-        ) { [weak self] note in
-            self?.set(keyboard: 0, note: note)
+        ) { [weak self] _ in
+            self?.set(keyboard: 0)
         }
         // 转屏 / 分屏之后安全区会变
         let onGeometry = center.addObserver(
@@ -97,15 +97,13 @@ final class ChatChrome {
         else { return }
         // 键盘帧是屏幕坐标系的：盖住的高度 = 屏幕底 - 键盘顶
         let screen = window?.screen.bounds ?? UIScreen.main.bounds
-        set(keyboard: max(0, screen.maxY - end.minY), note: note)
+        set(keyboard: max(0, screen.maxY - end.minY))
     }
 
-    /// 跟着键盘自己的时长与曲线走，胶囊才像"贴"在键盘上，而不是各走各的
-    private func set(keyboard value: CGFloat, note: Notification) {
+    /// 通知里给的是键盘最终帧。这里必须立即占住最终安全位置：宿主自己的键盘避让
+    /// 已经在动画，若再给差值套一层 SwiftUI easeOut，真机上会落后并被键盘追上遮住。
+    private func set(keyboard value: CGFloat) {
         guard value != keyboard else { return }
-        let seconds = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
-        withAnimation(.easeOut(duration: max(seconds, 0.01))) {
-            keyboard = value
-        }
+        keyboard = value
     }
 }
