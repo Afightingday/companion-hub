@@ -159,9 +159,14 @@ final class ChatSession {
         rebuildRows()
     }
 
-    /// 审批裁决：本地即时置态（手感），服务端广播兜底纠偏；410=已超时也按本地选择显示
+    /// 审批裁决：本地即时置态（手感），服务端广播兜底纠偏；410=已超时也按本地选择显示。
+    /// 本地先按「批准/拒绝」画；工具真跑失败了，网关会再广播一次 `failed` 把它改过来。
     func decide(approvalId: String, decision: String) async {
-        applyApprovalResolved(messages: &messages, approvalId: approvalId, decision: decision)
+        applyApprovalResolved(
+            messages: &messages,
+            approvalId: approvalId,
+            status: decision == "approve" ? .approved : .denied
+        )
         rebuildRows()
         guard let client else { return }
         try? await client.decideApproval(approvalId: approvalId, decision: decision)
@@ -199,7 +204,7 @@ final class ChatSession {
                     applyApprovalResolved(
                         messages: &messages,
                         approvalId: resolved.id,
-                        decision: resolved.decision
+                        status: resolved.status
                     )
                     rebuildRows()
                     continue

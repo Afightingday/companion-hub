@@ -91,15 +91,25 @@ extension View {
         glassEffect(.clear, in: shape)
     }
 
-    /// 纸纹：中性噪点 soft-light，只加质感、不改页面平均明度
-    func yyPaperGrain() -> some View {
-        overlay {
-            SceneAsset.image("assets/grain.png")
-                .resizable(resizingMode: .tile)
-                .opacity(0.045)
-                .blendMode(.softLight)
-                .allowsHitTesting(false)
-        }
+}
+
+/// 会话页底纹 —— 祐祐生成的格纸背景（纸鹤 / 一枝叶 / 星芒 / 「Youyou」签名都在图里）。
+///
+/// 两点定法：
+/// 1. **不再叠 `grain.png`**：这张图自带纸纹与网格，再叠一层噪点只会糊掉网格；
+/// 2. 图是 853×1844（1:2.161），和 19.5:9 的机型几乎同比，`scaledToFill` 裁切极小；
+///    万一遇上比例更方的机型，底下垫 `YY.page` 兜底，不会露白。
+struct ChatBackdrop: View {
+    var body: some View {
+        SceneAsset.image("assets/chat/paper-bg.png")
+            .resizable()
+            .scaledToFill()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .ignoresSafeArea()
+            .background(YY.page.ignoresSafeArea())
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

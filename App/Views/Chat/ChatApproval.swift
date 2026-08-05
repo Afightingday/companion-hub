@@ -12,11 +12,14 @@ struct ChatApprovalCard: View {
     @State private var stamping = false
     @State private var deciding = false
 
-    private var danger: Bool {
-        let copy = request.title + " " + (request.detail ?? "") + " " + request.kind
-        return copy.contains("删除") || copy.contains("移除") || copy.contains("不可恢复")
-            || copy.localizedCaseInsensitiveContains("delete")
-    }
+    /// 危险与否**由网关判、随卡片下发**（docs/approval-model.md §5）。
+    /// 这里原来是搜 title+detail+kind 里的「删除/移除/不可恢复/delete」——
+    /// 两头都错：「删除草稿」被标红，`git reset --hard`、`dd of=`、`curl | sh` 一条都标不出来。
+    /// iOS 只负责画。
+    private var danger: Bool { request.isDangerous }
+
+    /// 危险时那一行字。网关给了具体理由就用它的，没给才回退成通用的一句。
+    private var dangerLine: String { request.riskReason ?? "确认后不可恢复" }
 
     private var accent: Color { danger ? YY.rose600 : YY.sage700 }
     private var sealAsset: String { danger ? "assets/chat/seal-rose.png" : "assets/chat/seal-you.png" }
@@ -26,8 +29,7 @@ struct ChatApprovalCard: View {
         Group {
             switch status {
             case .pending: pendingCard
-            case .approved: receipt(approved: true)
-            case .denied: receipt(approved: false)
+            default: receipt(status)
             }
         }
         .frame(maxWidth: 360, alignment: .leading)
@@ -94,7 +96,8 @@ struct ChatApprovalCard: View {
                 Image(systemName: danger ? "exclamationmark.circle" : "heart.fill")
                     .font(.system(size: 15))
                     .foregroundStyle(danger ? YY.danger : YY.rose500)
-                Text(danger ? "确认后不可恢复" : "需要你点个头")
+                Text(danger ? dangerLine : "需要你点个头")
+                    .fixedSize(horizontal: false, vertical: true)
                     .font(.system(size: 16.5))
                     .foregroundStyle(YY.ink700)
             }
@@ -215,8 +218,22 @@ struct ChatApprovalCard: View {
 
     // MARK: - 回执（齿边小票）
 
-    private func receipt(approved: Bool) -> some View {
-        HStack(spacing: 14) {
+    /// 四种终态各有各的说法。最要紧的是 `failed` 不能画成「已记入」——
+    /// 盖了章但工具没跑成，还给人看一张办妥的小票，那是骗人。
+    private func receiptCopy(_ status: ApprovalUiStatus) -> (icon: String, text: String) {
+        switch status {
+        case .approved: return ("checkmark", "已记入")
+        case .denied: return ("xmark", "没有寄出")
+        case .expired: return ("clock", "等太久了，这次没做")
+        case .failed: return ("exclamationmark.triangle", "盖了章，但没做成")
+        case .pending: return ("hourglass", "还等着你")
+        }
+    }
+
+    private func receipt(_ status: ApprovalUiStatus) -> some View {
+        let copy = receiptCopy(status)
+        let approved = status == .approved
+        return HStack(spacing: 14) {
             SceneAsset.image(sprigAsset)
                 .resizable()
                 .scaledToFit()
@@ -231,12 +248,12 @@ struct ChatApprovalCard: View {
                     .foregroundStyle(YY.ink800)
                     .lineLimit(2)
                 HStack(spacing: 5) {
-                    Image(systemName: approved ? "checkmark" : "xmark")
+                    Image(systemName: copy.icon)
                         .font(.system(size: 11, weight: .semibold))
-                    Text(approved ? "已记入" : "没有寄出")
+                    Text(copy.text)
                 }
                 .font(.system(size: 13))
-                .foregroundStyle(YY.ink400)
+                .foregroundStyle(status == .failed ? YY.rose600 : YY.ink400)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

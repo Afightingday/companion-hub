@@ -1,35 +1,21 @@
 import SwiftUI
 
-/// 新对话空态：一枚「祐」印 + 两笔手绘点缀，下面三条虚线胶囊是可以直接点的开场白。
+/// 新对话空态：一枚「祐」印 + 三条可直接点的开场白胶囊。
+/// 点缀**只留印章** —— 星芒与 swoosh 底纹图里本来就有（见 ChatBackdrop），
+/// 这儿再摆一份就成了重影。
 struct ChatEmptyState: View {
     let seeds: [String]
     var onPick: (String) -> Void
 
     var body: some View {
         VStack(spacing: 34) {
-            ZStack {
-                SceneAsset.image("assets/chat/seal-you.png")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 84, height: 84)
-                    .opacity(0.9)
-
-                SceneAsset.image("assets/chat/gold-sparkles.png")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 40)
-                    .opacity(0.45)
-                    .offset(x: 50, y: -44)
-
-                SceneAsset.image("assets/chat/swoosh.png")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 68)
-                    .opacity(0.22)
-                    .offset(x: -39, y: 48)
-            }
-            .frame(width: 172, height: 138)
-            .accessibilityHidden(true)
+            SceneAsset.image("assets/chat/seal-you.png")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 84, height: 84)
+                .opacity(0.9)
+                .frame(height: 110)
+                .accessibilityHidden(true)
 
             VStack(spacing: 11) {
                 ForEach(seeds, id: \.self) { seed in

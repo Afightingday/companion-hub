@@ -55,7 +55,8 @@ final class ChatReducerTests: XCTestCase {
         var m = makeMessage()
         let approval = ApprovalRequest(
             id: "ap1", provider: "codex", kind: "command_exec",
-            title: "执行命令", detail: nil, payload: nil, expiresAt: nil
+            title: "执行命令", detail: nil, payload: nil, expiresAt: nil,
+            category: "execAll", risk: "normal", riskReason: nil
         )
         m.apply(.approvalRequest(approval))
         guard case .approval(_, .pending) = m.parts[0].payload else {
@@ -63,10 +64,33 @@ final class ChatReducerTests: XCTestCase {
         }
 
         var list = [m]
-        applyApprovalResolved(messages: &list, approvalId: "ap1", decision: "approve")
+        applyApprovalResolved(messages: &list, approvalId: "ap1", status: .approved)
         guard case .approval(_, .approved) = list[0].parts[0].payload else {
             return XCTFail("广播后应置 approved")
         }
+
+        // 盖了章但工具没跑成 → 网关会再广播一次 failed，把小票改口
+        applyApprovalResolved(messages: &list, approvalId: "ap1", status: .failed)
+        guard case .approval(_, .failed) = list[0].parts[0].payload else {
+            return XCTFail("failed 必须能盖掉 approved，否则是拿假小票骗人")
+        }
+    }
+
+    /// 危险与否由网关下发，iOS 不再自己搜标题关键词
+    func testDangerComesFromGatewayNotKeywords() {
+        let make = { (title: String, risk: String?) in
+            ApprovalRequest(
+                id: "a", provider: "claude", kind: "tool_use",
+                title: title, detail: nil, payload: nil, expiresAt: nil,
+                category: nil, risk: risk, riskReason: nil
+            )
+        }
+        // 标题里带「删除」但网关说不危险 → 不标红（老逻辑的误报）
+        XCTAssertFalse(make("删除草稿", "normal").isDangerous)
+        // 标题人畜无害但网关说危险 → 标红（老逻辑的漏报，比如 git reset --hard）
+        XCTAssertTrue(make("跑一条命令", "danger").isDangerous)
+        // 老网关不带这个字段 → 当 normal，不会更危险
+        XCTAssertFalse(make("跑一条命令", nil).isDangerous)
     }
 
     func testErrorAbortedAndCompleted() {
@@ -97,12 +121,27 @@ final class ChatReducerTests: XCTestCase {
         let event = ProviderEvent.raw(
             provider: "gateway",
             payload: .object([
-                "approvalResolved": .object(["id": .string("ap1"), "decision": .string("deny")]),
+                "approvalResolved": .object([
+                    "id": .string("ap1"),
+                    "status": .string("failed"),
+                    "decision": .string("approve"),
+                ]),
             ])
         )
         let resolved = event.approvalResolved
         XCTAssertEqual(resolved?.id, "ap1")
-        XCTAssertEqual(resolved?.decision, "deny")
+        // status 优先于 decision：这两个字段冲突时，只有 status 说得清「盖了章但没跑成」
+        XCTAssertEqual(resolved?.status, .failed)
+
+        // 老网关只发 decision，还得认
+        let legacy = ProviderEvent.raw(
+            provider: "gateway",
+            payload: .object([
+                "approvalResolved": .object(["id": .string("ap2"), "decision": .string("deny")]),
+            ])
+        )
+        XCTAssertEqual(legacy.approvalResolved?.status, .denied)
+
         XCTAssertNil(ProviderEvent.completed.approvalResolved)
         XCTAssertNil(ProviderEvent.raw(provider: "codex", payload: .object(["x": .number(1)])).approvalResolved)
     }

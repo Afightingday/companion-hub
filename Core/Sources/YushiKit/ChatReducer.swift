@@ -3,8 +3,15 @@ import Foundation
 // apps/web/src/lib/applyEvent.ts 的 Swift 移植 + 历史消息（ApiMessage）到 UI 模型的换装。
 // 纯逻辑、零 UI 依赖——放 Core 保住 Linux CI 可测线（归约规则改动必须两端同步）。
 
+/// 审批的终态。`expired`（等太久我们代拒）与 `failed`（盖了章但工具没跑成）
+/// 是必须分开的两个：少了它们，这两种情况只能跟「拒绝了」画成同一张灰票；
+/// `failed` 更糟——会画成「已记入」，等于拿一张假小票骗人
+///（docs/approval-model.md §4）。
 public enum ApprovalUiStatus: String, Sendable, Equatable {
-    case pending, approved, denied
+    case pending, approved, denied, expired, failed
+
+    /// 还能不能点
+    public var isPending: Bool { self == .pending }
 }
 
 /// 一张工具卡片：call 与 result 按 id 汇于同一张卡（applyEvent.ts upsertTool 语义）
@@ -176,13 +183,14 @@ private extension UiPart {
     }
 }
 
-/// 审批决议广播：把所有消息里匹配的信封置为终态（applyEvent.ts applyApprovalResolved）
+/// 审批决议广播：把所有消息里匹配的信封置为终态。
+/// 收的是**终态**而不是「批准/拒绝」—— `failed` 是盖章之后才发生的，
+/// 用 decision 那两个值表达不出来。
 public func applyApprovalResolved(
     messages: inout [UiMessage],
     approvalId: String,
-    decision: String
+    status: ApprovalUiStatus
 ) {
-    let status: ApprovalUiStatus = decision == "approve" ? .approved : .denied
     for m in messages.indices {
         for p in messages[m].parts.indices {
             if case .approval(let request, _) = messages[m].parts[p].payload, request.id == approvalId {
@@ -235,8 +243,8 @@ public extension UiMessage {
             case .approval:
                 guard let p = decodePayload(part.payload, as: ApprovalPartPayload.self),
                       let approval = p.approval else { break }
-                // "expired" 等未知终态按 denied 展示（不再可操作）
-                let status = ApprovalUiStatus(rawValue: p.status ?? "") ?? (p.status == "pending" ? .pending : .denied)
+                // expired / failed 现在都是正经的终态；再有不认识的一律按 denied 展示（不再可操作）
+                let status = ApprovalUiStatus(rawValue: p.status ?? "") ?? .denied
                 parts.append(UiPart(id: "approval-\(approval.id)", payload: .approval(approval, status)))
             case .citation:
                 guard let c = decodePayload(part.payload, as: Citation.self) else { break }

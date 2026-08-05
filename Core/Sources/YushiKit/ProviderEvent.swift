@@ -28,6 +28,17 @@ public struct ApprovalRequest: Codable, Sendable, Equatable, Identifiable {
     public var payload: JSONValue?
     /// ISO 时间；超时未答按拒绝处理（设计 §11.3）
     public var expiresAt: String?
+    /// 动作分类（readFiles | editFiles | execSafe | execAll | useMcp | fetchWeb | session | other）
+    public var category: String?
+    /// normal | danger —— **网关按结构化参数算好下发的**，iOS 只画不判
+    /// （docs/approval-model.md §5）。缺省当 normal：老网关不带这个字段也不会更危险。
+    public var risk: String?
+    /// 危险的具体理由，一句人话，直接显示
+    public var riskReason: String?
+
+    /// 只有网关明确说危险才是危险。**不要**在这里回退成搜标题关键词 ——
+    /// 那正是这次拆掉的东西（会把「删除草稿」标红，又漏掉 `git reset --hard`）。
+    public var isDangerous: Bool { risk == "danger" }
 }
 
 public struct AgentPlanItem: Codable, Sendable, Equatable {
@@ -181,14 +192,20 @@ public extension ProviderEvent {
         return try? decoder.decode(ProviderEvent.self, from: data)
     }
 
-    /// 网关自造控制信号：审批决议广播（turn.ts 以 raw{payload.approvalResolved:{id,decision}} 发出，
-    /// 归约前要先拦截分流——apps/web/src/pages/Chat.tsx 同规则）
-    var approvalResolved: (id: String, decision: String)? {
+    /// 网关自造控制信号：审批决议广播（turn.ts 以
+    /// `raw{payload.approvalResolved:{id,status,decision}}` 发出，归约前要先拦截分流）。
+    ///
+    /// `status` 是终态（approved/denied/expired/failed）；`decision` 只是给老网关留的兼容位。
+    /// 优先认 status —— 少了它就分不清「拒绝了」和「盖了章却没跑成」。
+    var approvalResolved: (id: String, status: ApprovalUiStatus)? {
         guard case .raw(_, let payload) = self,
               let obj = payload?["approvalResolved"],
-              let id = obj["id"]?.stringValue,
-              let decision = obj["decision"]?.stringValue else { return nil }
-        return (id, decision)
+              let id = obj["id"]?.stringValue else { return nil }
+        if let raw = obj["status"]?.stringValue, let status = ApprovalUiStatus(rawValue: raw) {
+            return (id, status)
+        }
+        guard let decision = obj["decision"]?.stringValue else { return nil }
+        return (id, decision == "approve" ? .approved : .denied)
     }
 }
 

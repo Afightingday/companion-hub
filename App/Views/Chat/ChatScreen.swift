@@ -55,10 +55,7 @@ struct ChatScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            YY.page
-                .ignoresSafeArea()
-                .yyPaperGrain()
-                .ignoresSafeArea()
+            ChatBackdrop()
 
             thread
                 .overlay(alignment: .top) {
