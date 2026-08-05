@@ -113,6 +113,12 @@ struct ChatTraceLine: View {
                     .font(.system(size: 13))
                     .foregroundStyle(spec.failed ? YY.danger : YY.ink400)
                     .lineLimit(1)
+                    // 这一行是整条过程链里唯一没有截断保护的刚性子项：`lineLimit(1)` 的 Text
+                    // 会把自己的理想宽度当作硬需求，meta 一长就顶宽整行 → 整个正文列被撑宽 →
+                    // 居中排布之下左边那截被推出屏幕，就是「首字被切」。
+                    // 截断 + 负布局优先级：宽度不够时它先让，绝不外顶。
+                    .truncationMode(.tail)
+                    .layoutPriority(-1)
             }
             if expandable {
                 Image(systemName: "chevron.right")

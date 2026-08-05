@@ -21,6 +21,11 @@ final class ChatSession {
     private var turnStarting = false
     private(set) var loadingMore = false
     private(set) var reachedTop = false
+    /// 最近一条**自己发出去**的消息 id。会话页据此把它顶到视口顶端
+    /// （ChatGPT / Claude 式 anchor-to-top-on-send，不是 IM 的 stick-to-bottom）。
+    /// 乐观发送先落 temp id、POST 回来换真 id —— 两处都要更新，
+    /// 否则滚动锚点会指向一条已经不在表里的行。
+    private(set) var lastUserMessageId: String?
 
     var isStreaming: Bool { turnStarting || activeTurnId != nil }
     var isEmpty: Bool { messages.isEmpty && loadError == nil }
@@ -108,6 +113,7 @@ final class ChatSession {
         appendMessage(
             UiMessage(id: tempId, author: "user", status: .sending, text: text, sentAt: now, replyTo: replyTo)
         )
+        lastUserMessageId = tempId
 
         do {
             let res = try await client.sendMessage(conversationId: conversationId, text: text, replyTo: replyTo)
@@ -115,6 +121,7 @@ final class ChatSession {
                 $0.id = res.userMessageId
                 $0.status = .done
             }
+            lastUserMessageId = res.userMessageId
             let assistantId = res.assistantMessageId ?? "assistant-\(res.turnId)"
             appendMessage(UiMessage(id: assistantId, author: "contact", status: .streaming, sentAt: now))
             activeTurnId = res.turnId

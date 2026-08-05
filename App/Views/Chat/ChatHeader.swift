@@ -1,95 +1,12 @@
 import SwiftUI
 
-/// 会话页的三副面孔。
-/// `.contact`（改备注）2026-08-05 移除 —— 顶栏搬上系统导航栏之后它不再是一种「页面状态」，
-/// 而是一张独立的编辑面板（见 `ChatRenameSheet`）。
+/// 会话页的四副面孔。`.contact` ＝ 正在就地改备注（名字在导航栏标题位上直接变成输入框）。
+///
+/// 2026-08-05 上午一度把改备注做成独立面板（`ChatRenameSheet`），祐祐当天就否了
+/// （「弹一张编辑面板就是不好不喜欢」）。**别再往面板方向走** ——
+/// 要的是原位展开：点名字弹一张贴着它的小卡片（原生 Menu），选「改名字」就地变输入框。
 enum ChatMode: Equatable {
-    case idle, search, select
-}
-
-/// 编辑联系人：从顶栏里搬出来的。
-///
-/// 旧版是在自绘顶栏上做原位编辑 —— 头像从 46 长到 56、冒出相机角标、右边的搜索钮
-/// 变成「完成」。系统导航栏只有 44pt，那套原位形变塞不进去，硬塞就是把导航栏改造成
-/// 一个假顶栏，等于白搬。苹果自己也是把改名放进独立面板（信息、通讯录都是）。
-///
-/// 只在「完成」时回写；取消什么都不动。
-struct ChatRenameSheet: View {
-    let initialName: String
-    var onChangeAvatar: () -> Void
-    var onCommit: (String) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var draft = ""
-    @FocusState private var focused: Bool
-
-    private var trimmed: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 26) {
-                avatarButton
-                TextField("名字", text: $draft)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 17))
-                    .focused($focused)
-                    .submitLabel(.done)
-                    .onSubmit(commit)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 30)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(YY.cream100)
-            .navigationTitle("编辑联系人")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成", action: commit)
-                        .disabled(trimmed.isEmpty)
-                }
-            }
-        }
-        .presentationDetents([.medium])
-        .task {
-            draft = initialName
-            // 面板刚上来那一帧焦点给不进去（旧顶栏那处也是 DispatchQueue.main.async 绕的）
-            try? await Task.sleep(for: .milliseconds(220))
-            focused = true
-        }
-    }
-
-    private var avatarButton: some View {
-        Button(action: onChangeAvatar) {
-            SceneAsset.image("assets/chat/seal-you.png")
-                .resizable()
-                .scaledToFit()
-                .padding(10)
-                .frame(width: 76, height: 76)
-                .background(YY.sage100, in: Circle())
-                .overlay { Circle().strokeBorder(YY.borderHair, lineWidth: 1) }
-                .overlay(alignment: .bottomTrailing) {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(YY.ink500)
-                        .frame(width: 26, height: 26)
-                        .background(.white, in: Circle())
-                        .shadow(color: YY.shadowInk.opacity(0.18), radius: 2, y: 1)
-                        .offset(x: 2, y: 2)
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("更换头像")
-    }
-
-    private func commit() {
-        guard !trimmed.isEmpty else { return }
-        onCommit(trimmed)
-        dismiss()
-    }
+    case idle, search, select, contact
 }
 
 /// 断网提示：不占导航栏的位置，作为一枚浮丸挂在栏下。

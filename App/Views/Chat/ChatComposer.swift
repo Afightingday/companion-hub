@@ -16,13 +16,16 @@ struct ChatComposerChip: Equatable {
 struct ChatComposer: View {
     @Binding var draft: String
     @Binding var chip: ChatComposerChip?
+    /// 焦点由 ChatScreen 持有：收键盘这件事发生在输入条**之外**
+    /// （点卷轴空白、下滑手势），焦点关在这里就够不着（祐祐 2026-08-05 真机反馈）。
+    /// 声明顺序＝逐成员构造器的参数顺序，挪位置要连调用点一起改。
+    @FocusState.Binding var focused: Bool
     let streaming: Bool
     let offline: Bool
     var onSend: () -> Void
     var onStop: () -> Void
     var onAttachmentPicked: () -> Void
 
-    @FocusState private var focused: Bool
     @State private var attachSheet = false
     @State private var photoItem: PhotosPickerItem?
     @State private var photoPicker = false
@@ -34,7 +37,7 @@ struct ChatComposer: View {
     }
 
     /// 单行时正好是个胶囊；长到多行也保持同一枚圆角，不跟着变形
-    private var shell: some Shape { RoundedRectangle(cornerRadius: 26, style: .continuous) }
+    private var shell: RoundedRectangle { RoundedRectangle(cornerRadius: 26, style: .continuous) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -87,7 +90,7 @@ struct ChatComposer: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
-        .yyGlassFloat(shell)
+        .yyFrostedThick(shell)
         .animation(.sceneHover(0.26), value: chip)
         .animation(.sceneStandard(0.2), value: streaming)
         // ── 附件：系统原生动作单，不自制面板 ──

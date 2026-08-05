@@ -4,24 +4,15 @@ import YushiKit
 
 /// 单 Agent 会话页。
 ///
-/// **这一版的唯一主张：版面不由我算，由系统算。**
+/// **主张一：版面不由我算，由系统算。** 两条 bar 都走系统（导航栏 + `safeAreaInset`），
+/// 键盘避让、卷轴内缩、栏内版式全归它。自绘的 `ChatChrome` / `ChatHeaderBar` 已删。
+/// ⚠️ 边缘返回手势拿不到 —— 这一页是 `fullScreenCover` 盖上来的，栈里没有上一页可退。
 ///
-/// 上一版把顶栏和输入条挂在一个 `GeometryReader` 钉死尺寸的盒子上，
-/// 那个盒子不会因为键盘变矮，于是输入条永远不动 —— 只好自己听键盘通知、
-/// 自己量顶栏高度、自己扣宿主已经给过的那一段（`ChatChrome`，已删）。
-/// 键盘通知给的是「最终停在哪 + 动画多久」，不是逐帧位置；手指拖着收键盘的
-/// 那 300ms 里输入条收不到任何消息，只能等键盘走完再「啪」地落下。这就是「不丝滑」。
-///
-/// 现在：
-/// - 顶栏＝**系统导航栏**（`NavigationStack` + `.toolbar`）。玻璃、栏高、栏内版式、
-///   正文滚到栏下的柔化全归系统。自绘的 `ChatHeaderBar` 与那层保险丝渐隐一并删。
-///   ⚠️ 边缘返回手势**拿不到** —— 这一页是 `fullScreenCover` 盖上来的，栈里没有上一页可退。
-///   要拿手势得改首页怎么打开它，那是另一件事，别在这儿硬做。
-/// - 输入条＝`safeAreaInset(edge:.bottom)`，键盘避让是系统的（`HomeSceneView` 的
-///   fullScreenCover 宿主早已实证「键盘避让全系统」），`.scrollDismissesKeyboard(.interactively)`
-///   才真的连续；卷轴的上下留白由 inset 自动内缩，不再需要量高度回填 padding。
-///
-/// 三条骨架不变：消息不进容器；时间只在滚动时浮一枚整点胶囊；破坏性操作走系统动作单。
+/// **主张二（2026-08-05 祐祐定）：滚动走 anchor-to-top-on-send，不是 IM 的 stick-to-bottom。**
+/// 发出去的那条顶到视口顶端，回答在它下面自然生长；**流式期间不做任何自动滚动**，
+/// 手动滚动永远优先。上一版用 `.defaultScrollAnchor(.bottom, for: .sizeChanges)` 死盯底部，
+/// 结果自己的话被顶到输入框底下看不见了，键盘一弹还会把卷轴锚到空白区（整屏内容消失）。
+/// 那个修饰符已拆，**别再加回来**。
 struct ChatScreen: View {
     let item: ContactListItem
     /// 宿主自己管返回时传进来（如首页的 fullScreenCover）；不传就退出当前呈现
@@ -29,6 +20,7 @@ struct ChatScreen: View {
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var network = NetworkMonitor.shared
     @State private var session: ChatSession?
@@ -37,10 +29,16 @@ struct ChatScreen: View {
     @State private var chip: ChatComposerChip?
     @State private var name = ""
 
+    /// 输入框焦点放在页级：收键盘这件事发生在输入条**之外**（点空白、下滑）
+    @FocusState private var inputFocused: Bool
+    /// 改备注时导航栏标题位那个输入框的焦点
+    @FocusState private var nameFocused: Bool
+
     // 多选
     @State private var picked: Set<String> = []
     @State private var confirmDeleteMany = false
     @State private var pendingDelete: String?
+    @State private var shareText: String?
 
     // 搜索
     @State private var query = ""
@@ -48,12 +46,26 @@ struct ChatScreen: View {
     @State private var hitIndex = 0
     @State private var searchTask: Task<Void, Never>?
 
-    /// 面板只留一个出口。两个 `.sheet` 挂同一个视图上是 SwiftUI 的老雷，
-    /// 后挂的那个会被吞掉；统一成 `sheet(item:)` 就没这回事。
-    @State private var sheet: ChatSheet?
+    // 卷轴
+    @State private var scrollPos = ScrollPosition(edge: .bottom)
+    /// 被顶到视口顶端的那条自己的消息。它把卷轴切成「历史」和「本轮」两段，
+    /// 尾部补一块动态空白，保证本轮还没生成内容时也有地方可顶。
+    @State private var pinnedUserId: String?
+    @State private var viewportHeight: CGFloat = 0
+    /// 被钉那条的顶缘 y（.scrollView 坐标）
+    @State private var pinY: CGFloat = 0
+    /// **空白之前**的内容末端 y。空白高度按 `contentEndY - pinY` 算 ——
+    /// 探针必须在空白**上方**，否则「空白撑高 → 末端下移 → 空白再撑高」直接布局回环。
+    @State private var contentEndY: CGFloat = 0
+    /// 真正的内容末端（含空白），只喂悬浮钮判断「到底了没」，不参与排版所以不怕回环。
+    @State private var tailEndY: CGFloat = 0
+
+    // 方向感知悬浮钮
+    @State private var nub: ChatNub = .hidden
+    @State private var nubAccum: CGFloat = 0
+    @State private var nubLastY: CGFloat?
 
     // 浮层
-    @State private var scrollPos = ScrollPosition(edge: .bottom)
     @State private var timeLabel = ""
     @State private var timeVisible = false
     @State private var timeTask: Task<Void, Never>?
@@ -64,9 +76,7 @@ struct ChatScreen: View {
     /// 整点锚存在一个普通对象里，**不是 @State 值**——
     /// 滚动时 y 每帧都在变，写进 @State 会每帧重建 body，白烧一整页的布局。
     @State private var timeAnchors = ChatTimeAnchors()
-    /// 安全区顶缘（＝导航栏底缘）在屏幕上的绝对 y。
-    /// **只喂时间胶囊的取值门槛，不参与任何排版** —— 排版全由导航栏和 safeAreaInset 决定，
-    /// 所以它写进 @State 也不会引起版面回环。
+    /// 安全区顶缘（＝导航栏底缘）的绝对 y。**只喂时间胶囊的门槛，不参与排版**。
     @State private var contentTop: CGFloat = 108
 
     private let seeds = ["明早提醒我去河边", "这周我都干了什么", "把妈妈的腌菜方子记下来"]
@@ -76,14 +86,11 @@ struct ChatScreen: View {
             thread
                 .background { ChatBackdrop() }
                 .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
-                // 探针与浮丸都挂在导航栏之后：它们看到的安全区已经含顶栏了，
-                // 自动落在栏正下方，不用再拿量出来的高度去垫。
                 .overlay(alignment: .top) { safeTopProbe }
                 .overlay(alignment: .top) { floatingPills }
+                .overlay(alignment: .bottom) { nubButton }
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
-                .animation(.sceneStandard(0.24), value: toast)
-                .animation(.sceneStandard(0.3), value: network.isOnline)
                 .task {
                     if session == nil {
                         let made = ChatSession(client: model.client, item: item)
@@ -98,6 +105,11 @@ struct ChatScreen: View {
                     if value != .select { picked = [] }
                     if value == .search { query = "" }
                     if value != .search { hits = []; hitIndex = 0 }
+                }
+                // 自己的话一落地就把它顶到视口顶端（temp id → 真 id 会变两次，都要跟）
+                .onChange(of: session?.lastUserMessageId) { _, id in
+                    guard let id else { return }
+                    pinToTop(id)
                 }
                 // ── 破坏性操作交给系统原生动作单 ──
                 .confirmationDialog(
@@ -131,20 +143,10 @@ struct ChatScreen: View {
                     }
                     Button("取消", role: .cancel) { pendingDelete = nil }
                 }
-                .sheet(item: $sheet) { which in
-                    switch which {
-                    case .share(let text):
-                        ChatShareSheet(text: text)
+                .sheet(isPresented: Binding(get: { shareText != nil }, set: { if !$0 { shareText = nil } })) {
+                    if let shareText {
+                        ChatShareSheet(text: shareText)
                             .ignoresSafeArea()
-                    case .rename:
-                        ChatRenameSheet(
-                            initialName: name,
-                            onChangeAvatar: { flash("头像换图还没接上") },
-                            onCommit: { newName in
-                                name = newName
-                                commitName()
-                            }
-                        )
                     }
                 }
         }
@@ -172,28 +174,56 @@ struct ChatScreen: View {
                 }
                 .accessibilityLabel("返回")
             }
-            ToolbarItem(placement: .principal) {
-                Button { sheet = .rename } label: {
-                    HStack(spacing: 8) {
-                        avatarThumb
-                        Text(name)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(YY.ink800)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
+            ToolbarItem(placement: .principal) { principalItem }
+            if mode == .contact {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成", action: finishRename)
                 }
-                // 栏内标题位不该长成一颗玻璃钮；这里只要可点，不要按钮外观。
-                .buttonStyle(.plain)
-                .accessibilityLabel(name)
-                .accessibilityHint("编辑联系人")
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { mode = .search } label: {
-                    Image(systemName: "magnifyingglass")
+        }
+        // 搜索钮不在顶栏上了：往上翻历史时那枚方向感知悬浮钮会变成放大镜（见 nubButton）
+    }
+
+    @ViewBuilder
+    private var principalItem: some View {
+        if mode == .contact {
+            // 就地变输入框 —— 不弹面板（祐祐 2026-08-05：「弹一张编辑面板就是不好不喜欢」）
+            TextField("名字", text: $name)
+                .textFieldStyle(.plain)
+                .font(.system(size: 18.5, weight: .semibold))
+                .foregroundStyle(YY.ink800)
+                .tint(YY.sage500)
+                .lineLimit(1)
+                .focused($nameFocused)
+                .submitLabel(.done)
+                .onSubmit(finishRename)
+                .frame(minWidth: 150)
+        } else {
+            // 点一下弹一张贴着它的小卡片：原生 Menu 就是那个长相，不用自绘
+            Menu {
+                Button {
+                    mode = .contact
+                    DispatchQueue.main.async { nameFocused = true }
+                } label: {
+                    Label("改名字", systemImage: "pencil")
                 }
-                .accessibilityLabel("搜索")
+                Button {
+                    flash("头像换图还没接上")
+                } label: {
+                    Label("换头像", systemImage: "photo")
+                }
+            } label: {
+                HStack(spacing: 9) {
+                    avatarThumb
+                    Text(name)
+                        .font(.system(size: 18.5, weight: .semibold))
+                        .foregroundStyle(YY.ink800)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
+            .accessibilityLabel(name)
+            .accessibilityHint("联系人操作")
         }
     }
 
@@ -201,11 +231,17 @@ struct ChatScreen: View {
         SceneAsset.image("assets/chat/seal-you.png")
             .resizable()
             .scaledToFit()
-            .padding(4)
-            .frame(width: 28, height: 28)
+            .padding(5)
+            .frame(width: 34, height: 34)
             .background(YY.sage100, in: Circle())
             .overlay { Circle().strokeBorder(YY.borderHair, lineWidth: 0.8) }
             .accessibilityHidden(true)
+    }
+
+    private func finishRename() {
+        nameFocused = false
+        mode = .idle
+        commitName()
     }
 
     // MARK: - 卷轴
@@ -228,40 +264,89 @@ struct ChatScreen: View {
                         if let error = session.loadError {
                             ChatLoadErrorRow(text: error) { Task { await session.load() } }
                         }
+                        // 行必须是 scrollTargetLayout 的**直接子项**：包进嵌套 VStack 的话
+                        // scrollTo(id:) 就找不着被钉的那条，anchor-to-top 直接失灵。
                         ForEach(session.rows) { row in
-                            rowView(row, session: session)
-                                .id(row.id)
+                            rowView(row, session: session).id(row.id)
                         }
+                        // 空白之前的末端：给空白高度当被减数
+                        Color.clear
+                            .frame(height: 0)
+                            .onGeometryChange(for: CGFloat.self) {
+                                $0.frame(in: .scrollView).minY
+                            } action: { contentEndY = $0 }
+                        // 动态空白：本轮内容还撑不满一屏时补足，好让自己那条能真的顶到顶。
+                        // 回答一长就自己缩没，不会在底下留一块空地。
+                        Color.clear.frame(height: bottomSpacer)
+                        // 真末端：只判断「到底了没」，给悬浮钮用
+                        Color.clear
+                            .frame(height: 0)
+                            .onGeometryChange(for: CGFloat.self) {
+                                $0.frame(in: .scrollView).minY
+                            } action: { tailEndY = $0 }
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
-            // 列宽钉死＝容器宽。竖轴 ScrollView 仍可能被超宽子项撑大内容列，
-            // 钉住之后 trace / 审批卡的绘制越界不能再把整列居中推到 x=-16。
-            .containerRelativeFrame(.horizontal)
+            // 列宽钉死＝容器宽，**且必须 leading**。默认的 .center 在任何一个子项超宽时
+            // 会把溢出往两边分，左边那截直接被推出屏幕＝「首字被切」（b29 真机复现）。
+            // leading 之下溢出只往右跑，最坏是右边被截，绝不会吃掉开头。
+            .containerRelativeFrame(.horizontal, alignment: .leading)
             .scrollTargetLayout()
         }
         .scrollPosition($scrollPos)
-        // 首屏落底
-        .defaultScrollAnchor(.bottom)
-        // 内容尺寸变化时保住「离底的距离」：流式增长跟着走，往上翻历史时
-        // 前置插入不再把正在看的地方顶跑（旧版翻页跳一下就是这儿缺的）。
-        .defaultScrollAnchor(.bottom, for: .sizeChanges)
+        // 只钉**首屏**落底。绝不要 .sizeChanges —— 那是 stick-to-bottom，
+        // 会把自己刚发的话顶到输入框底下，键盘一弹还会锚到空白区。
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
         .scrollDismissesKeyboard(.interactively)
-        // 正文穿过导航栏 / 输入条时的柔化交给系统，替掉旧版整页 .mask 的每帧离屏合成
-        .scrollEdgeEffectStyle(.soft, for: .vertical)
+        // 内容不足一屏时也要能拖，否则下滑收键盘的手势根本没得触发
+        .scrollBounceBehavior(.always)
+        // 只柔化顶缘：底下的输入条已经是厚磨砂，不用再叠一层实时模糊（省一半开销）
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        // 点卷轴任意空白处收键盘。simultaneous 才不会把气泡的长按/点击一起吃掉。
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                if inputFocused { inputFocused = false }
+            }
+        )
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
         // 这个回调每帧都响；只做一次 8pt 阈值比较，避免每帧重建 body。
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
             guard abs(y - timeAnchors.lastOffset) > 8 else { return }
             timeAnchors.lastOffset = y
             refreshTimeLabel()
+            updateNub(offsetY: y)
         }
         .onScrollPhaseChange { _, phase in
             if phase == .idle {
                 scheduleHideTimePill()
             } else {
                 showTimePill()
+            }
+        }
+    }
+
+    // MARK: - anchor-to-top-on-send 的算术
+
+    /// 本轮（自己那条起）到目前为止占了多高。两个 y 都在 .scrollView 坐标里，
+    /// 差值与滚动位置无关，卷轴怎么动都不影响它。
+    private var pinnedTailHeight: CGFloat { max(0, contentEndY - pinY) }
+
+    /// 补到「刚好能把自己那条顶到顶」为止。回答越长，这块空白越小，长到超过一屏就没了。
+    private var bottomSpacer: CGFloat {
+        guard pinnedUserId != nil else { return 0 }
+        return max(0, viewportHeight - pinnedTailHeight - 16)
+    }
+
+    /// 把这条自己的消息顶到视口顶端。先落 pin 让尾部空白撑起来，**下一帧**再滚 ——
+    /// 同一帧里滚是滚不动的，那时还没有可供上顶的空间。
+    private func pinToTop(_ id: String) {
+        pinnedUserId = id
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(32))
+            withAnimation(reduceMotion ? nil : .sceneOut(0.38)) {
+                scrollPos.scrollTo(id: id, anchor: .top)
             }
         }
     }
@@ -313,13 +398,75 @@ struct ChatScreen: View {
                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .animation(.sceneStandard(0.36), value: highlighted)
+            .modifier(ChatPinAnchor(active: message.id == pinnedUserId) { pinY = $0 })
         }
+    }
+
+    // MARK: - 方向感知悬浮钮
+
+    /// 往上翻历史 → 放大镜；往下滑 → 回底箭头；贴近底部 → 收起。
+    /// 换态只换图标不换容器，用 symbol replace 过渡。
+    private var nubButton: some View {
+        Button {
+            Haptic.lightTap()
+            switch nub {
+            case .search:
+                inputFocused = false
+                mode = .search
+            case .toBottom:
+                withAnimation(reduceMotion ? nil : .sceneOut(0.35)) {
+                    scrollPos.scrollTo(edge: .bottom)
+                }
+            case .hidden:
+                break
+            }
+        } label: {
+            Image(systemName: nub == .search ? "magnifyingglass" : "arrow.down")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(YY.ink600)
+                .frame(width: 40, height: 40)
+                .contentTransition(.symbolEffect(.replace.downUp))
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.capsule)
+        .opacity(nub == .hidden ? 0 : 1)
+        .scaleEffect(nub == .hidden ? 0.85 : 1)
+        .allowsHitTesting(nub != .hidden)
+        .animation(
+            reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.8),
+            value: nub
+        )
+        .padding(.bottom, 12) // 距输入框上沿
+        .accessibilityLabel(nub == .search ? "搜索这个对话" : "回到最新")
+        .accessibilityHidden(nub == .hidden)
+    }
+
+    /// 方向反转要**累计**超过 24pt 才切换。少了这道防抖，手指微微一抖图标就来回跳。
+    private func updateNub(offsetY y: CGFloat) {
+        defer { nubLastY = y }
+        guard let last = nubLastY else { return }
+        let dy = y - last
+        guard dy != 0 else { return }
+
+        // 同向累加，反向清零重计
+        nubAccum = (dy > 0) == (nubAccum > 0) ? nubAccum + dy : dy
+
+        // 贴近底部就收起（末端探针落在视口下缘 40pt 以内）
+        if tailEndY <= viewportHeight + 40 {
+            if nub != .hidden { nub = .hidden }
+            return
+        }
+        if nubAccum <= -24, nub != .search {
+            nub = .search              // 往上翻历史
+        } else if nubAccum >= 24, nub != .toBottom {
+            nub = .toBottom            // 往下滑
+        }
+        // 停手不自动隐藏：这里不做任何 idle 复位（祐祐点名「防抖别省，停止滚动不自动隐藏」）
     }
 
     // MARK: - 栏下浮层
 
-    /// 零高探针：量的是**安全区顶缘**（导航栏底缘）在屏幕上的位置，
-    /// 给时间胶囊当取值门槛。挂在 overlay 里所以自带安全区，不用自己加导航栏高度。
+    /// 零高探针：量安全区顶缘（导航栏底缘）在屏幕上的位置，给时间胶囊当门槛。
     private var safeTopProbe: some View {
         Color.clear
             .frame(height: 0)
@@ -327,6 +474,8 @@ struct ChatScreen: View {
             .allowsHitTesting(false)
     }
 
+    /// 三枚浮丸。动画**只挂在这儿** —— 上一版把 `.animation(value:)` 挂在整页上，
+    /// 一个吐司就把整棵 ScrollView 卷进隐式动画里，滚动能不钝么。
     private var floatingPills: some View {
         VStack(spacing: 7) {
             if !network.isOnline {
@@ -341,6 +490,8 @@ struct ChatScreen: View {
         }
         .padding(.top, 8)
         .allowsHitTesting(false)
+        .animation(.sceneStandard(0.24), value: toast)
+        .animation(.sceneStandard(0.3), value: network.isOnline)
     }
 
     // MARK: - 底部：输入胶囊 / 搜索条 / 多选工具条
@@ -363,10 +514,11 @@ struct ChatScreen: View {
                     onClose: { mode = .idle }
                 )
                 .padding(.horizontal, 4)
-            case .idle:
+            case .idle, .contact:
                 ChatComposer(
                     draft: $draft,
                     chip: $chip,
+                    focused: $inputFocused,
                     streaming: session?.isStreaming ?? false,
                     offline: !network.isOnline,
                     onSend: sendDraft,
@@ -389,7 +541,7 @@ struct ChatScreen: View {
         draft = ""
         chip = nil
         Haptic.softTap()
-        withAnimation(.sceneOut(0.3)) { scrollPos.scrollTo(edge: .bottom) }
+        // 不在这里滚：等消息真的落进表里，onChange(lastUserMessageId) 会把它顶上去
         Task { await session?.send(text, replyTo: replyTo) }
     }
 
@@ -432,11 +584,10 @@ struct ChatScreen: View {
     private func shareSelected() {
         guard let session, !picked.isEmpty else { return }
         let who = session.contact?.name ?? item.contact.name
-        let text = session.messages
+        shareText = session.messages
             .filter { picked.contains($0.id) }
             .map { ($0.isUser ? "我：" : "\(who)：") + $0.text }
             .joined(separator: "\n\n")
-        sheet = .share(text)
     }
 
     private func commitName() {
@@ -532,15 +683,30 @@ struct ChatScreen: View {
     }
 }
 
-/// 本页所有面板的唯一出口
-private enum ChatSheet: Identifiable {
-    case share(String)
-    case rename
+/// 悬浮钮的三态
+private enum ChatNub: Equatable {
+    case hidden, search, toBottom
+}
 
-    var id: String {
-        switch self {
-        case .share: return "share"
-        case .rename: return "rename"
+/// 只给**被钉住的那一条**装测量和顶端边距。
+///
+/// 为什么不是无脑装在所有行上：`onGeometryChange` 是每帧回调，装满全表就是每帧
+/// 跑一遍所有行的几何 —— 那正是这次要治的掉帧。这里全程只有一行装着。
+/// 16pt 的边距**进这一行自己的 frame**，`scrollTo(id:anchor:.top)` 才把它算进去，
+/// 顶上去之后正文离视口顶缘正好留这么多。
+private struct ChatPinAnchor: ViewModifier {
+    let active: Bool
+    let onY: (CGFloat) -> Void
+
+    func body(content: Content) -> some View {
+        if active {
+            content
+                .padding(.top, 16)
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.frame(in: .scrollView).minY
+                } action: onY
+        } else {
+            content
         }
     }
 }

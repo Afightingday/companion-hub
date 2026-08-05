@@ -85,12 +85,27 @@ extension View {
         glassEffect(.regular.interactive(), in: shape)
     }
 
-    /// 不可按的悬浮玻璃（时间胶囊、吐司、输入胶囊）。
+    /// 不可按的悬浮玻璃（时间胶囊、吐司、离线丸）。
     /// 走 .clear 清透档 —— .regular 在浅色纸面上会泛白（b21 已被点名过一次）。
     func yyGlassFloat(_ shape: some Shape) -> some View {
         glassEffect(.clear, in: shape)
     }
 
+    /// **厚磨砂**：输入条专用（祐祐 2026-08-05 点名）。
+    ///
+    /// 液态玻璃那套折射和动态高光挂在常驻的输入条上是错的 —— 正文从它背后滚过去时，
+    /// 折射会跟着字一起动，整条边缘一直在呼吸，看久了发晕，也是掉帧的一份。
+    /// 输入条要的是**安静的底**：厚磨砂压住背景，再叠一层乳白提亮，不反光不折射。
+    func yyFrostedThick(_ shape: some InsettableShape) -> some View {
+        background {
+            shape.fill(.ultraThickMaterial)
+            shape.fill(Color.white.opacity(0.38))
+        }
+        .overlay {
+            shape.strokeBorder(Color.white.opacity(0.55), lineWidth: 0.8)
+        }
+        .yyShadowMD()
+    }
 }
 
 /// 会话页底纹 —— 祐祐生成的格纸背景（纸鹤 / 一枝叶 / 星芒 / 「Youyou」签名都在图里）。
