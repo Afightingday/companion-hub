@@ -1,4 +1,4 @@
-# 雨施流形 · iOS（SwiftUI）
+# 祐识 · iOS（SwiftUI）
 
 自建「AI 伙伴网关」的原生 iOS 客户端。App 本体不含任何服务与密钥：
 网关地址与访问令牌在 App 内「案头」页**运行时**填写——地址进 UserDefaults，

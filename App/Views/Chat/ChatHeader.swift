@@ -1,176 +1,101 @@
 import SwiftUI
 
+/// 会话页的三副面孔。
+/// `.contact`（改备注）2026-08-05 移除 —— 顶栏搬上系统导航栏之后它不再是一种「页面状态」，
+/// 而是一张独立的编辑面板（见 `ChatRenameSheet`）。
 enum ChatMode: Equatable {
-    case idle, search, select, contact
+    case idle, search, select
 }
 
-/// 顶栏浮在纸面上，本身不带底色。圆钮全走系统原生液态玻璃。
-/// 常态 / 多选两副长相原位互换；改备注时名字就地长成输入框。
-/// **搜索不在这条上** —— 对位会话总览页的范式，搜索条贴在键盘上方（见 ChatSearchDock）。
-struct ChatHeaderBar: View {
-    @Binding var mode: ChatMode
-    @Binding var name: String
-    let offline: Bool
-    let pickedCount: Int
-    /// 从 UIWindow 取得的真实顶部安全区。放在顶栏内部，绘制帧与命中帧才是同一个。
-    let safeTop: CGFloat
-    var onBack: () -> Void
-    var onCommitName: () -> Void
+/// 编辑联系人：从顶栏里搬出来的。
+///
+/// 旧版是在自绘顶栏上做原位编辑 —— 头像从 46 长到 56、冒出相机角标、右边的搜索钮
+/// 变成「完成」。系统导航栏只有 44pt，那套原位形变塞不进去，硬塞就是把导航栏改造成
+/// 一个假顶栏，等于白搬。苹果自己也是把改名放进独立面板（信息、通讯录都是）。
+///
+/// 只在「完成」时回写；取消什么都不动。
+struct ChatRenameSheet: View {
+    let initialName: String
     var onChangeAvatar: () -> Void
+    var onCommit: (String) -> Void
 
-    @FocusState private var nameFocused: Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft = ""
+    @FocusState private var focused: Bool
 
-    private var isContact: Bool { mode == .contact }
+    private var trimmed: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        VStack(spacing: 10) {
-            if mode == .select {
-                selectBar
-            } else {
-                normalBar
-            }
-            if offline { offlinePill }
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, safeTop + 6)
-        .padding(.bottom, 14)
-        .animation(.sceneHover(0.28), value: mode)
-        .animation(.sceneStandard(0.3), value: offline)
-    }
-
-    // MARK: - 常态 / 改备注
-
-    private var normalBar: some View {
-        HStack(spacing: 9) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(YY.ink600)
-                    .frame(width: 42, height: 42)
-            }
-            // 首页同款真机已验证的原生玻璃 Button；不要把 interactive glass 挂在 label 上。
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .accessibilityLabel("返回")
-
-            HStack(spacing: 12) {
-                avatar
-                TextField("", text: $name)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 21, weight: .bold))
-                    .foregroundStyle(YY.ink800)
-                    .tint(YY.sage500)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .disabled(!isContact)
-                    .focused($nameFocused)
+        NavigationStack {
+            VStack(spacing: 26) {
+                avatarButton
+                TextField("名字", text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 17))
+                    .focused($focused)
                     .submitLabel(.done)
-                    .onSubmit { finishContact() }
-                    .padding(.horizontal, isContact ? 14 : 0)
-                    .frame(minHeight: 36)
-                    .background(
-                        isContact
-                            ? Color(red: 118 / 255, green: 118 / 255, blue: 128 / 255).opacity(0.09)
-                            : .clear,
-                        in: RoundedRectangle(cornerRadius: YY.rSM, style: .continuous)
-                    )
-                    .overlay {
-                        if isContact {
-                            RoundedRectangle(cornerRadius: YY.rSM, style: .continuous)
-                                .strokeBorder(
-                                    Color(red: 60 / 255, green: 60 / 255, blue: 67 / 255).opacity(0.1),
-                                    lineWidth: 0.5
-                                )
-                        }
-                    }
+                    .onSubmit(commit)
+                Spacer(minLength: 0)
             }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                guard mode == .idle else { return }
-                mode = .contact
-                DispatchQueue.main.async { nameFocused = true }
-            }
-
-            rightPill
-        }
-    }
-
-    private var avatar: some View {
-        SceneAsset.image("assets/chat/seal-you.png")
-            .resizable()
-            .scaledToFit()
-            .padding(isContact ? 7.4 : 6)
-            .frame(width: isContact ? 56 : 46, height: isContact ? 56 : 46)
-            .background(YY.sage100, in: Circle())
-            .overlay { Circle().strokeBorder(YY.borderHair, lineWidth: 1) }
-            .overlay(alignment: .bottomTrailing) {
-                Image(systemName: "camera.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color(red: 60 / 255, green: 60 / 255, blue: 67 / 255).opacity(0.55))
-                    .frame(width: 22, height: 22)
-                    .background(.white, in: Circle())
-                    .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
-                    .offset(x: 3, y: 3)
-                    .opacity(isContact ? 1 : 0)
-                    .scaleEffect(isContact ? 1 : 0.5)
-            }
-            .contentShape(Circle())
-            .onTapGesture {
-                guard isContact else { return }
-                onChangeAvatar()
-            }
-            .animation(.sceneHover(0.3), value: isContact)
-    }
-
-    private var rightPill: some View {
-        Button {
-            if isContact { finishContact() } else { openSearch() }
-        } label: {
-            HStack(spacing: 0) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(YY.ink600)
-                    .frame(width: isContact ? 0 : 18)
-                    .opacity(isContact ? 0 : 1)
-                    .clipped()
-                if isContact {
-                    Text("完成")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(YY.sage600)
+            .padding(.horizontal, 24)
+            .padding(.top, 30)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(YY.cream100)
+            .navigationTitle("编辑联系人")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成", action: commit)
+                        .disabled(trimmed.isEmpty)
                 }
             }
-            .frame(minWidth: 42, minHeight: 42)
-            .padding(.horizontal, isContact ? 16 : 0)
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.capsule)
-        .accessibilityLabel(isContact ? "完成" : "搜索")
+        .presentationDetents([.medium])
+        .task {
+            draft = initialName
+            // 面板刚上来那一帧焦点给不进去（旧顶栏那处也是 DispatchQueue.main.async 绕的）
+            try? await Task.sleep(for: .milliseconds(220))
+            focused = true
+        }
     }
 
-    // MARK: - 多选
-
-    private var selectBar: some View {
-        HStack {
-            Button { mode = .idle } label: {
-                Text("取消")
-                    .font(.system(size: 17))
-                    .foregroundStyle(YY.sage600)
-            }
-            .buttonStyle(.plain)
-
-            Text(pickedCount > 0 ? "已选 \(pickedCount) 条" : "选择消息")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(YY.ink700)
-                .frame(maxWidth: .infinity)
-
-            Color.clear.frame(width: 36, height: 1)
+    private var avatarButton: some View {
+        Button(action: onChangeAvatar) {
+            SceneAsset.image("assets/chat/seal-you.png")
+                .resizable()
+                .scaledToFit()
+                .padding(10)
+                .frame(width: 76, height: 76)
+                .background(YY.sage100, in: Circle())
+                .overlay { Circle().strokeBorder(YY.borderHair, lineWidth: 1) }
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(YY.ink500)
+                        .frame(width: 26, height: 26)
+                        .background(.white, in: Circle())
+                        .shadow(color: YY.shadowInk.opacity(0.18), radius: 2, y: 1)
+                        .offset(x: 2, y: 2)
+                }
         }
-        .frame(height: 42)
+        .buttonStyle(.plain)
+        .accessibilityLabel("更换头像")
     }
 
-    // MARK: - 离线
+    private func commit() {
+        guard !trimmed.isEmpty else { return }
+        onCommit(trimmed)
+        dismiss()
+    }
+}
 
-    private var offlinePill: some View {
+/// 断网提示：不占导航栏的位置，作为一枚浮丸挂在栏下。
+/// 底下垫玻璃 —— 光有虚线圈的话，正文从后面滚过去时字会糊在一起。
+struct ChatOfflinePill: View {
+    var body: some View {
         HStack(spacing: 7) {
             ChatPulseDot()
             Text("网络已断开")
@@ -179,23 +104,13 @@ struct ChatHeaderBar: View {
                 .foregroundStyle(YY.ink400)
         }
         .padding(.horizontal, 13)
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
+        .yyGlassFloat(Capsule())
         .overlay {
             Capsule().strokeBorder(YY.ink300, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
         }
-        .transition(.opacity)
-    }
-
-    // MARK: -
-
-    private func openSearch() {
-        mode = .search
-    }
-
-    private func finishContact() {
-        nameFocused = false
-        mode = .idle
-        onCommitName()
+        .transition(.opacity.combined(with: .offset(y: -6)))
+        .allowsHitTesting(false)
     }
 }
 
@@ -248,7 +163,7 @@ struct ChatSearchDock: View {
     }
 }
 
-/// 呼吸的小圆点（离线条用）
+/// 呼吸的小圆点（离线丸用）
 struct ChatPulseDot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dim = false

@@ -2,12 +2,26 @@ import SwiftUI
 import UIKit
 import YushiKit
 
-/// 单 Agent 会话页 —— 对位设计稿「Agent 对话页 v2」。
+/// 单 Agent 会话页。
 ///
-/// 三条骨架：
-/// 1. 顶栏与输入胶囊都**浮**在纸上（下面不垫衬底），玻璃走系统原生液态玻璃；
-/// 2. 消息不进容器 —— 你的话一圈虚线，祐识那边的话直接落在纸上；
-/// 3. 时间不占版面：滚动时浮一枚**整点**胶囊，没有左拖露时间那套。
+/// **这一版的唯一主张：版面不由我算，由系统算。**
+///
+/// 上一版把顶栏和输入条挂在一个 `GeometryReader` 钉死尺寸的盒子上，
+/// 那个盒子不会因为键盘变矮，于是输入条永远不动 —— 只好自己听键盘通知、
+/// 自己量顶栏高度、自己扣宿主已经给过的那一段（`ChatChrome`，已删）。
+/// 键盘通知给的是「最终停在哪 + 动画多久」，不是逐帧位置；手指拖着收键盘的
+/// 那 300ms 里输入条收不到任何消息，只能等键盘走完再「啪」地落下。这就是「不丝滑」。
+///
+/// 现在：
+/// - 顶栏＝**系统导航栏**（`NavigationStack` + `.toolbar`）。玻璃、栏高、栏内版式、
+///   正文滚到栏下的柔化全归系统。自绘的 `ChatHeaderBar` 与那层保险丝渐隐一并删。
+///   ⚠️ 边缘返回手势**拿不到** —— 这一页是 `fullScreenCover` 盖上来的，栈里没有上一页可退。
+///   要拿手势得改首页怎么打开它，那是另一件事，别在这儿硬做。
+/// - 输入条＝`safeAreaInset(edge:.bottom)`，键盘避让是系统的（`HomeSceneView` 的
+///   fullScreenCover 宿主早已实证「键盘避让全系统」），`.scrollDismissesKeyboard(.interactively)`
+///   才真的连续；卷轴的上下留白由 inset 自动内缩，不再需要量高度回填 padding。
+///
+/// 三条骨架不变：消息不进容器；时间只在滚动时浮一枚整点胶囊；破坏性操作走系统动作单。
 struct ChatScreen: View {
     let item: ContactListItem
     /// 宿主自己管返回时传进来（如首页的 fullScreenCover）；不传就退出当前呈现
@@ -15,7 +29,6 @@ struct ChatScreen: View {
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var network = NetworkMonitor.shared
     @State private var session: ChatSession?
@@ -28,7 +41,6 @@ struct ChatScreen: View {
     @State private var picked: Set<String> = []
     @State private var confirmDeleteMany = false
     @State private var pendingDelete: String?
-    @State private var shareText: String?
 
     // 搜索
     @State private var query = ""
@@ -36,9 +48,11 @@ struct ChatScreen: View {
     @State private var hitIndex = 0
     @State private var searchTask: Task<Void, Never>?
 
-    // 版面
-    @State private var headerHeight: CGFloat = 108
-    @State private var dockHeight: CGFloat = 76
+    /// 面板只留一个出口。两个 `.sheet` 挂同一个视图上是 SwiftUI 的老雷，
+    /// 后挂的那个会被吞掉；统一成 `sheet(item:)` 就没这回事。
+    @State private var sheet: ChatSheet?
+
+    // 浮层
     @State private var scrollPos = ScrollPosition(edge: .bottom)
     @State private var timeLabel = ""
     @State private var timeVisible = false
@@ -50,180 +64,204 @@ struct ChatScreen: View {
     /// 整点锚存在一个普通对象里，**不是 @State 值**——
     /// 滚动时 y 每帧都在变，写进 @State 会每帧重建 body，白烧一整页的布局。
     @State private var timeAnchors = ChatTimeAnchors()
-    /// 窗口级静态安全区与键盘遮挡。宿主已经给出的动态 bottom inset 在本页另行实量，
-    /// 两者只补差值（见 ChatChrome）。
-    @State private var chrome = ChatChrome()
+    /// 安全区顶缘（＝导航栏底缘）在屏幕上的绝对 y。
+    /// **只喂时间胶囊的取值门槛，不参与任何排版** —— 排版全由导航栏和 safeAreaInset 决定，
+    /// 所以它写进 @State 也不会引起版面回环。
+    @State private var contentTop: CGFloat = 108
 
     private let seeds = ["明早提醒我去河边", "这周我都干了什么", "把妈妈的腌菜方子记下来"]
 
     var body: some View {
-        // 根 GeometryReader 是尺寸庄家：子视图再宽也只能在这个视口里排，不能把
-        // fullScreenCover 的根 ZStack 撑宽后居中裁掉左右内容/错开命中坐标。
-        GeometryReader { viewport in
-            ZStack(alignment: .top) {
-                ChatBackdrop()
-
-                thread
-                    .overlay(alignment: .top) {
-                        ChatTimePill(label: timeLabel, visible: timeVisible && mode != .select)
-                            .padding(.top, max(0, headerHeight - 34))
+        NavigationStack {
+            thread
+                .background { ChatBackdrop() }
+                .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+                // 探针与浮丸都挂在导航栏之后：它们看到的安全区已经含顶栏了，
+                // 自动落在栏正下方，不用再拿量出来的高度去垫。
+                .overlay(alignment: .top) { safeTopProbe }
+                .overlay(alignment: .top) { floatingPills }
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { toolbarContent }
+                .animation(.sceneStandard(0.24), value: toast)
+                .animation(.sceneStandard(0.3), value: network.isOnline)
+                .task {
+                    if session == nil {
+                        let made = ChatSession(client: model.client, item: item)
+                        session = made
+                        name = item.contact.name
+                        await made.load()
+                        name = made.contact?.name ?? item.contact.name
                     }
+                }
+                .onChange(of: query) { _, value in scheduleSearch(value) }
+                .onChange(of: mode) { _, value in
+                    if value != .select { picked = [] }
+                    if value == .search { query = "" }
+                    if value != .search { hits = []; hitIndex = 0 }
+                }
+                // ── 破坏性操作交给系统原生动作单 ──
+                .confirmationDialog(
+                    "删除 \(picked.count) 条消息？删除后无法恢复。",
+                    isPresented: $confirmDeleteMany,
+                    titleVisibility: .visible
+                ) {
+                    Button("删除消息", role: .destructive) {
+                        let ids = picked
+                        Task {
+                            await session?.delete(ids: ids)
+                            picked = []
+                            mode = .idle
+                            flash("已删除")
+                        }
+                    }
+                    Button("取消", role: .cancel) {}
+                }
+                .confirmationDialog(
+                    "删除这条消息？删除后无法恢复。",
+                    isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+                    titleVisibility: .visible
+                ) {
+                    Button("删除消息", role: .destructive) {
+                        guard let id = pendingDelete else { return }
+                        pendingDelete = nil
+                        Task {
+                            await session?.delete(ids: [id])
+                            flash("已删除")
+                        }
+                    }
+                    Button("取消", role: .cancel) { pendingDelete = nil }
+                }
+                .sheet(item: $sheet) { which in
+                    switch which {
+                    case .share(let text):
+                        ChatShareSheet(text: text)
+                            .ignoresSafeArea()
+                    case .rename:
+                        ChatRenameSheet(
+                            initialName: name,
+                            onChangeAvatar: { flash("头像换图还没接上") },
+                            onCommit: { newName in
+                                name = newName
+                                commitName()
+                            }
+                        )
+                    }
+                }
+        }
+    }
 
-                ChatHeaderBar(
-                    mode: $mode,
-                    name: $name,
-                    offline: !network.isOnline,
-                    pickedCount: picked.count,
-                    safeTop: chrome.safeTop,
-                    onBack: { if let onBack { onBack() } else { dismiss() } },
-                    onCommitName: commitName,
-                    onChangeAvatar: { flash("头像换图还没接上") }
-                )
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+    // MARK: - 系统导航栏
 
-                if let toast {
-                    ChatToast(text: toast)
-                        .padding(.top, headerHeight + 8)
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if mode == .select {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("取消") { mode = .idle }
+            }
+            ToolbarItem(placement: .principal) {
+                Text(picked.isEmpty ? "选择消息" : "已选 \(picked.count) 条")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(YY.ink700)
+            }
+        } else {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    if let onBack { onBack() } else { dismiss() }
+                } label: {
+                    Image(systemName: "chevron.backward")
                 }
+                .accessibilityLabel("返回")
             }
-            .frame(width: viewport.size.width, height: viewport.size.height, alignment: .top)
-            .clipped()
-            // 输入胶囊悬浮在卷轴之上。系统已给的 bottom inset 直接从尺寸庄家读取，
-            // ChatChrome 只补剩余差值。
-            .overlay(alignment: .bottom) {
-                bottomBar(systemBottomInset: viewport.safeAreaInsets.bottom)
-            }
-        }
-        .background(YY.page)
-        .toolbar(.hidden, for: .navigationBar)
-        .animation(.sceneStandard(0.24), value: toast)
-        .onAppear { chrome.start() }
-        .onDisappear { chrome.stop() }
-        .task {
-            if session == nil {
-                let made = ChatSession(client: model.client, item: item)
-                session = made
-                name = item.contact.name
-                await made.load()
-                name = made.contact?.name ?? item.contact.name
-            }
-        }
-        .onChange(of: query) { _, value in scheduleSearch(value) }
-        .onChange(of: mode) { _, value in
-            if value != .select { picked = [] }
-            if value == .search { query = "" }
-            if value != .search { hits = []; hitIndex = 0 }
-        }
-        // ── 破坏性操作交给系统原生动作单 ──
-        .confirmationDialog(
-            "删除 \(picked.count) 条消息？删除后无法恢复。",
-            isPresented: $confirmDeleteMany,
-            titleVisibility: .visible
-        ) {
-            Button("删除消息", role: .destructive) {
-                let ids = picked
-                Task {
-                    await session?.delete(ids: ids)
-                    picked = []
-                    mode = .idle
-                    flash("已删除")
+            ToolbarItem(placement: .principal) {
+                Button { sheet = .rename } label: {
+                    HStack(spacing: 8) {
+                        avatarThumb
+                        Text(name)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(YY.ink800)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 }
+                // 栏内标题位不该长成一颗玻璃钮；这里只要可点，不要按钮外观。
+                .buttonStyle(.plain)
+                .accessibilityLabel(name)
+                .accessibilityHint("编辑联系人")
             }
-            Button("取消", role: .cancel) {}
-        }
-        .confirmationDialog(
-            "删除这条消息？删除后无法恢复。",
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("删除消息", role: .destructive) {
-                guard let id = pendingDelete else { return }
-                pendingDelete = nil
-                Task {
-                    await session?.delete(ids: [id])
-                    flash("已删除")
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { mode = .search } label: {
+                    Image(systemName: "magnifyingglass")
                 }
-            }
-            Button("取消", role: .cancel) { pendingDelete = nil }
-        }
-        .sheet(isPresented: Binding(get: { shareText != nil }, set: { if !$0 { shareText = nil } })) {
-            if let shareText {
-                ChatShareSheet(text: shareText)
-                    .ignoresSafeArea()
+                .accessibilityLabel("搜索")
             }
         }
+    }
+
+    private var avatarThumb: some View {
+        SceneAsset.image("assets/chat/seal-you.png")
+            .resizable()
+            .scaledToFit()
+            .padding(4)
+            .frame(width: 28, height: 28)
+            .background(YY.sage100, in: Circle())
+            .overlay { Circle().strokeBorder(YY.borderHair, lineWidth: 0.8) }
+            .accessibilityHidden(true)
     }
 
     // MARK: - 卷轴
 
     private var thread: some View {
-        GeometryReader { viewport in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 25) {
-                    if let session {
-                        if session.isEmpty {
-                            ChatEmptyState(seeds: seeds) { seed in
-                                draft = seed
-                                sendDraft()
-                            }
-                            .padding(.top, 60)
-                        } else {
-                            if !session.reachedTop {
-                                ChatLoadMoreRow()
-                                    .onAppear { Task { await session.loadMore() } }
-                            }
-                            if let error = session.loadError {
-                                ChatLoadErrorRow(text: error) { Task { await session.load() } }
-                            }
-                            ForEach(session.rows) { row in
-                                rowView(row, session: session)
-                                    .id(row.id)
-                            }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 25) {
+                if let session {
+                    if session.isEmpty {
+                        ChatEmptyState(seeds: seeds) { seed in
+                            draft = seed
+                            sendDraft()
+                        }
+                        .padding(.vertical, 40)
+                    } else {
+                        if !session.reachedTop {
+                            ChatLoadMoreRow()
+                                .onAppear { Task { await session.loadMore() } }
+                        }
+                        if let error = session.loadError {
+                            ChatLoadErrorRow(text: error) { Task { await session.load() } }
+                        }
+                        ForEach(session.rows) { row in
+                            rowView(row, session: session)
+                                .id(row.id)
                         }
                     }
                 }
-                // 竖轴 ScrollView 仍可能被超宽子项撑大内容列；明确钉住列宽，
-                // 让 trace/审批卡的绘制越界不能把整列居中推到 x=-16。
-                .frame(width: max(0, viewport.size.width - 32), alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.top, headerHeight)
-                // 最后一条要能翻到悬浮胶囊上方
-                .padding(.bottom, dockHeight + 16)
-                .scrollTargetLayout()
             }
-            .scrollPosition($scrollPos)
-            .scrollDismissesKeyboard(.interactively)
-            .mask {
-                // 正文到实际顶栏底缘才重新显现，不再穿过名字和按钮。
-                GeometryReader { proxy in
-                    let h = max(proxy.size.height, 1)
-                    let revealStart = min(0.48, max(0, headerHeight - 24) / h)
-                    let revealEnd = min(0.52, max(headerHeight, 1) / h)
-                    LinearGradient(
-                        stops: [
-                            .init(color: .clear, location: 0),
-                            .init(color: .clear, location: revealStart),
-                            .init(color: .black, location: revealEnd),
-                            .init(color: .black, location: max(0.6, 1 - 22 / h)),
-                            .init(color: .clear, location: 1),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
-            }
-            // 这个回调每帧都响；只做一次 8pt 阈值比较，避免每帧重建 body。
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
-                guard abs(y - timeAnchors.lastOffset) > 8 else { return }
-                timeAnchors.lastOffset = y
-                refreshTimeLabel()
-            }
-            .onScrollPhaseChange { _, phase in
-                if phase == .idle {
-                    scheduleHideTimePill()
-                } else {
-                    showTimePill()
-                }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            // 列宽钉死＝容器宽。竖轴 ScrollView 仍可能被超宽子项撑大内容列，
+            // 钉住之后 trace / 审批卡的绘制越界不能再把整列居中推到 x=-16。
+            .containerRelativeFrame(.horizontal)
+            .scrollTargetLayout()
+        }
+        .scrollPosition($scrollPos)
+        // 首屏落底
+        .defaultScrollAnchor(.bottom)
+        // 内容尺寸变化时保住「离底的距离」：流式增长跟着走，往上翻历史时
+        // 前置插入不再把正在看的地方顶跑（旧版翻页跳一下就是这儿缺的）。
+        .defaultScrollAnchor(.bottom, for: .sizeChanges)
+        .scrollDismissesKeyboard(.interactively)
+        // 正文穿过导航栏 / 输入条时的柔化交给系统，替掉旧版整页 .mask 的每帧离屏合成
+        .scrollEdgeEffectStyle(.soft, for: .vertical)
+        // 这个回调每帧都响；只做一次 8pt 阈值比较，避免每帧重建 body。
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
+            guard abs(y - timeAnchors.lastOffset) > 8 else { return }
+            timeAnchors.lastOffset = y
+            refreshTimeLabel()
+        }
+        .onScrollPhaseChange { _, phase in
+            if phase == .idle {
+                scheduleHideTimePill()
+            } else {
+                showTimePill()
             }
         }
     }
@@ -278,9 +316,36 @@ struct ChatScreen: View {
         }
     }
 
-    // MARK: - 底部悬浮：输入胶囊 / 搜索条 / 多选工具条
+    // MARK: - 栏下浮层
 
-    private func bottomBar(systemBottomInset: CGFloat) -> some View {
+    /// 零高探针：量的是**安全区顶缘**（导航栏底缘）在屏幕上的位置，
+    /// 给时间胶囊当取值门槛。挂在 overlay 里所以自带安全区，不用自己加导航栏高度。
+    private var safeTopProbe: some View {
+        Color.clear
+            .frame(height: 0)
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { contentTop = $0 }
+            .allowsHitTesting(false)
+    }
+
+    private var floatingPills: some View {
+        VStack(spacing: 7) {
+            if !network.isOnline {
+                ChatOfflinePill()
+            }
+            ZStack {
+                ChatTimePill(label: timeLabel, visible: timeVisible && mode != .select)
+                if let toast {
+                    ChatToast(text: toast)
+                }
+            }
+        }
+        .padding(.top, 8)
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - 底部：输入胶囊 / 搜索条 / 多选工具条
+
+    private var bottomBar: some View {
         Group {
             switch mode {
             case .select:
@@ -298,7 +363,7 @@ struct ChatScreen: View {
                     onClose: { mode = .idle }
                 )
                 .padding(.horizontal, 4)
-            case .idle, .contact:
+            case .idle:
                 ChatComposer(
                     draft: $draft,
                     chip: $chip,
@@ -311,11 +376,8 @@ struct ChatScreen: View {
                 .padding(.horizontal, 12)
             }
         }
-        // 只补系统没有给的那一段，避免完整键盘高度叠两次。
-        .padding(.bottom, chrome.supplementalBottomInset(systemBottomInset: systemBottomInset) + 8)
+        .padding(.bottom, 8)
         .animation(.sceneHover(0.28), value: mode)
-        // 卷轴按这个高度留出底部余量，最后一条才不会藏在胶囊底下
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dockHeight = $0 }
     }
 
     // MARK: - 动作
@@ -327,7 +389,7 @@ struct ChatScreen: View {
         draft = ""
         chip = nil
         Haptic.softTap()
-        scrollPos.scrollTo(edge: .bottom)
+        withAnimation(.sceneOut(0.3)) { scrollPos.scrollTo(edge: .bottom) }
         Task { await session?.send(text, replyTo: replyTo) }
     }
 
@@ -370,10 +432,11 @@ struct ChatScreen: View {
     private func shareSelected() {
         guard let session, !picked.isEmpty else { return }
         let who = session.contact?.name ?? item.contact.name
-        shareText = session.messages
+        let text = session.messages
             .filter { picked.contains($0.id) }
             .map { ($0.isUser ? "我：" : "\(who)：") + $0.text }
             .joined(separator: "\n\n")
+        sheet = .share(text)
     }
 
     private func commitName() {
@@ -425,9 +488,9 @@ struct ChatScreen: View {
 
     // MARK: - 整点胶囊与吐司
 
-    /// 视口顶部当前落在哪个整点：取仍在顶栏之上的最后一个时间锚
+    /// 视口顶部当前落在哪个整点：取仍在导航栏之上的最后一个时间锚
     private var visibleTimeLabel: String {
-        let threshold = headerHeight + 12
+        let threshold = contentTop + 12
         let all = timeAnchors.items.values
         if let nearest = all.filter({ $0.y <= threshold }).max(by: { $0.y < $1.y }) {
             return nearest.label
@@ -465,6 +528,19 @@ struct ChatScreen: View {
             try? await Task.sleep(for: .milliseconds(1300))
             guard !Task.isCancelled else { return }
             toast = nil
+        }
+    }
+}
+
+/// 本页所有面板的唯一出口
+private enum ChatSheet: Identifiable {
+    case share(String)
+    case rename
+
+    var id: String {
+        switch self {
+        case .share: return "share"
+        case .rename: return "rename"
         }
     }
 }
