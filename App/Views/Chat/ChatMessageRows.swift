@@ -71,49 +71,20 @@ struct ChatMessageRow: View {
 
     // MARK: - 祐识那边的话
 
+    /// 正文全权交给 `ChatMarkdownBody`（SwiftStreamingMarkdown）—— 边流边排，
+    /// 新来的词淡入，代码块 / 列表 / 表格 / 公式一并有了。
+    ///
+    /// 原来那套「定稿才解析 + 自己维护一张解析缓存」整个删了：包里已经有
+    /// 排版尺寸缓存和 UITextView 复用池（`ParagraphViewCache`），
+    /// b29 那个「上下滑像掉帧」的解析开销归它治，我们不该再手搓一份。
     private var agentBody: some View {
-        Text(displayText)
-            .font(.system(size: 17.5))
-            .lineSpacing(17.5 * 0.4)
-            .foregroundStyle(YY.ink700)
+        ChatMarkdownBody(text: message.text, animate: message.status == .streaming)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
+            // 正文那层已经 `.allowsHitTesting(false)`，这里得重新给外层一块可命中的形状，
+            // 否则长按落在空处，行菜单一样弹不出来。
+            .contentShape(Rectangle())
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14, style: .continuous))
             .chatMenu(isUser: false, enabled: !selecting, onAction: onAction)
-    }
-
-    /// 定稿才解析行内 Markdown；流式期间保持原文，否则每来一个字都重排一次版。
-    ///
-    /// 解析结果**必须走缓存**：这是个计算属性，body 每求值一次就重新解析一次整段正文。
-    /// LazyVStack 在滚动中反复创建/求值行视图，于是每帧都在解 Markdown ——
-    /// 「上下滑像掉帧」有它一份（祐祐 2026-08-05 真机反馈）。
-    private var displayText: AttributedString {
-        guard message.status == .done else { return AttributedString(message.text) }
-        return ChatMarkdownCache.styled(id: message.id, text: message.text)
-    }
-}
-
-/// 行内 Markdown 解析结果的缓存。按消息 id 存一份，正文变了才重解。
-/// 刻意不做成 @Observable：它只是记忆，写它不该触发任何重绘。
-@MainActor
-enum ChatMarkdownCache {
-    private static var store: [String: (source: String, styled: AttributedString)] = [:]
-    private static var order: [String] = []
-    private static let limit = 160
-
-    static func styled(id: String, text: String) -> AttributedString {
-        if let hit = store[id], hit.source == text { return hit.styled }
-        let made = (try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(text)
-        if store[id] == nil { order.append(id) }
-        store[id] = (text, made)
-        if order.count > limit {
-            let drop = order.removeFirst()
-            store.removeValue(forKey: drop)
-        }
-        return made
     }
 }
 

@@ -42,10 +42,24 @@ swift test --package-path Core
       Last-Event-ID 续流 + 掉线重连 + gone 回落拉历史）+ 事件归约器（Core/ChatReducer，
       对位 web applyEvent.ts）+ 思考/工具 TraceLine 行 + 审批纸卡 + 停止生成 + 行内 Markdown。
       同批网关侧：Codex adapter 迁 app-server v2（0.145.0 真机校准，thread 持久化进 KV）；
-      Claude 底稿/补丁填实（tidal-echo 素材库改写）。信封动效与全量 Markdown 后续批次打磨
+      Claude 底稿/补丁填实（tidal-echo 素材库改写）。信封动效后续批次打磨
+- [x] 全量 Markdown（2026-08-05）：正文换成 SwiftStreamingMarkdown ——
+      边流边排、新词淡入、代码块 / 列表 / 表格 / LaTeX 一并有了。
+      原来「流式期间露原始星号、写完那一刻一次性排版」的跳版就此消失
 - [ ] 第 3 批：群聊（说话人多路复用）
 - [ ] 第 4 批：食帖 / 留声（快捷指令播放）/ 光阴瓶 / 各类表单
 - [ ] 第 5 批：本地通知 / EventKit / 手感打磨
+
+## 第三方依赖
+
+- [`microsoft/SwiftStreamingMarkdown`](https://github.com/microsoft/SwiftStreamingMarkdown)
+  `v0.7.0`（MIT）—— 会话页正文的流式 Markdown 渲染内核。选它是因为流式排版真正难的
+  两件事都不是祐识特有的：**只对新追加的那段逐词淡入**（UITextView + CADisplayLink），
+  以及**把吐到一半的 `**加粗` 投机重写成粗体**，好让下一个 token 到达时不整段重排。
+  按 CLAUDE.md 第 0 条借内核、不自研。0.x 阶段接口会变，**版本钉死**，升级要人看过再改。
+  它带进来的传递依赖：`swift-markdown`(cmark-gfm)、`HighlightSwift`、`iosMath`、
+  `SwiftUI-Shimmer`、`ordo-one/equatable`（Swift 宏，故 CI 编译带 `-skipMacroValidation`）。
+  纸面配色在 `App/Views/Chat/ChatMarkdown.swift` 里一次性配好，不散落各处。
 
 ## 第三方资产
 

@@ -10,6 +10,13 @@ options:
 packages:
   YushiKit:
     path: Core
+  # 流式 Markdown 渲染内核（微软官方，MIT）。会话页正文归它渲染 ——
+  # 逐词淡入只重绘新来的那一截、半截 `**加粗` 会预判成粗体所以不跳版，
+  # 这两件是「换个产品也需要」的通用内核，按 CLAUDE.md 第 0 条一律借不自研。
+  # **钉死版本**：0.x 阶段接口会变，别用 from: / majorVersion。
+  SwiftStreamingMarkdown:
+    url: https://github.com/microsoft/SwiftStreamingMarkdown
+    exactVersion: 0.7.0
 
 settings:
   base:
@@ -34,6 +41,10 @@ targets:
         buildPhase: resources
     dependencies:
       - package: YushiKit
+      # 只挂在 App 靶上，**绝不能进 Core**：Core 要在 Linux 容器里跑单测，
+      # 这个包是 UIKit/SwiftUI 的，进去 CI 第一步就红。
+      - package: SwiftStreamingMarkdown
+        product: SwiftStreamingMarkdown
     info:
       path: App/Info.plist
       properties:
