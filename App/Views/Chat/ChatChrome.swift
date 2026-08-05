@@ -8,8 +8,9 @@ import UIKit
 /// 这一页挂在一棵**安全区被抹平**的 hosting 树里 ——
 /// `RootTabView` 的 representable 是 `.ignoresSafeArea()`（安全区交给
 /// UITabBarController 自己算），`HomeSceneView` 又是 440×956 设计画布直落 +
-/// `.ignoresSafeArea()`。到了 ChatScreen 这层，`safeAreaInsets` 已经是 0，
-/// **系统的键盘避让也一并没了**。b28 真机上的表现是三件事：
+/// `.ignoresSafeArea()`。到了 ChatScreen 这层，静态 `safeAreaInsets` 曾经是 0。
+/// 键盘这条不能从静态安全区继续外推：b28 真机证明宿主仍会提供一部分键盘避让，
+/// 所以这里只记录窗口级真值，最终 padding 由「目标遮挡 - 系统已给 inset」算差值。
 ///
 /// - 顶栏顶到状态栏里，名字被灵动岛压住；
 /// - 输入胶囊贴在屏幕物理最底，压着 home 指示条；
@@ -35,8 +36,12 @@ final class ChatChrome {
 
     private var tokens: [NSObjectProtocol] = []
 
-    /// 底部悬浮物该留多少余量：有键盘就贴键盘，没键盘就贴 home 指示条
-    var bottomInset: CGFloat { keyboard > 0 ? keyboard : safeBottom }
+    /// 底部悬浮物还需要**额外**补多少：宿主已经给过的那一段必须扣掉。
+    /// b28 的错误正是把完整 keyboard 再加一次，和系统的部分避让叠成双份。
+    func supplementalBottomInset(systemBottomInset: CGFloat) -> CGFloat {
+        let target = keyboard > 0 ? keyboard : safeBottom
+        return max(0, target - max(0, systemBottomInset))
+    }
 
     func start() {
         readInsets()

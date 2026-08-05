@@ -12,6 +12,8 @@ struct ChatHeaderBar: View {
     @Binding var name: String
     let offline: Bool
     let pickedCount: Int
+    /// 从 UIWindow 取得的真实顶部安全区。放在顶栏内部，绘制帧与命中帧才是同一个。
+    let safeTop: CGFloat
     var onBack: () -> Void
     var onCommitName: () -> Void
     var onChangeAvatar: () -> Void
@@ -30,7 +32,7 @@ struct ChatHeaderBar: View {
             if offline { offlinePill }
         }
         .padding(.horizontal, 12)
-        .padding(.top, 6)
+        .padding(.top, safeTop + 6)
         .padding(.bottom, 14)
         .animation(.sceneHover(0.28), value: mode)
         .animation(.sceneStandard(0.3), value: offline)

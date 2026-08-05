@@ -17,10 +17,12 @@ final class ChatSession {
     private(set) var contact: ContactConfig?
     private(set) var loadError: String?
     private(set) var activeTurnId: String?
+    /// POST 返回前 activeTurnId 还是 nil；没有这道门闩，两个 Task 会同时穿过发送 guard。
+    private var turnStarting = false
     private(set) var loadingMore = false
     private(set) var reachedTop = false
 
-    var isStreaming: Bool { activeTurnId != nil }
+    var isStreaming: Bool { turnStarting || activeTurnId != nil }
     var isEmpty: Bool { messages.isEmpty && loadError == nil }
 
     init(client: GatewayClient?, item: ContactListItem) {
@@ -88,6 +90,19 @@ final class ChatSession {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming, let client, let conversationId else { return }
 
+        // @MainActor 上先同步关门，再进入第一个 await；并发 Task 的第二个会在 guard 被挡住。
+        turnStarting = true
+        defer { turnStarting = false }
+        _ = await performSend(text, replyTo: replyTo, client: client, conversationId: conversationId)
+    }
+
+    /// 已占住 single-flight 门闩后的实际发送。成功返回新 assistant id，POST 失败返回 nil。
+    private func performSend(
+        _ text: String,
+        replyTo: String?,
+        client: GatewayClient,
+        conversationId: String
+    ) async -> String? {
         let tempId = "temp-\(UUID().uuidString)"
         let now = ChatSession.isoNow()
         appendMessage(
@@ -104,11 +119,13 @@ final class ChatSession {
             appendMessage(UiMessage(id: assistantId, author: "contact", status: .streaming, sentAt: now))
             activeTurnId = res.turnId
             await run(turnId: res.turnId, assistantId: assistantId, client: client)
+            return assistantId
         } catch {
             patch(tempId) {
                 $0.status = .error
                 $0.errorText = error.localizedDescription
             }
+            return nil
         }
     }
 
@@ -122,30 +139,45 @@ final class ChatSession {
     /// 网关没有 regenerate 端点，且上下文是从扁平历史组装的——旧那一轮必须先删掉，
     /// 否则新回合会把上一版答案一起喂回去。旧正文留在客户端当历史版本（本次会话内有效）。
     /// 分支树落库是独立一批的事（祐祐 2026-08-03 定）。
-    func retry(assistantId: String) async {
-        guard let client, !isStreaming,
+    @discardableResult
+    func retry(assistantId: String) async -> Bool {
+        guard let client, let conversationId, !isStreaming,
               let assistantIndex = messages.firstIndex(where: { $0.id == assistantId }),
               assistantIndex > 0
-        else { return }
+        else { return false }
 
         let assistant = messages[assistantIndex]
         let user = messages[assistantIndex - 1]
-        guard user.isUser, !user.text.isEmpty else { return }
+        guard user.isUser, !user.text.isEmpty else { return false }
+
+        // 删除与重发是一整个临界区；没占门闩前不能跨 await。
+        turnStarting = true
+        defer { turnStarting = false }
 
         var history = assistant.priorVersions
         if !assistant.text.isEmpty { history.append(assistant.text) }
 
-        try? await client.deleteMessage(id: assistant.id)
-        try? await client.deleteMessage(id: user.id)
+        do {
+            try await client.deleteMessage(id: assistant.id)
+            try await client.deleteMessage(id: user.id)
+        } catch {
+            // 旧实现吞掉删除错误后仍继续 send，会把旧问题复制一份。失败时以服务端快照纠偏并停下。
+            await load()
+            return false
+        }
         messages.removeAll { $0.id == assistant.id || $0.id == user.id }
         rebuildRows()
 
-        await send(user.text, replyTo: user.replyTo)
+        guard let newAssistantId = await performSend(
+            user.text,
+            replyTo: user.replyTo,
+            client: client,
+            conversationId: conversationId
+        ) else { return false }
 
         // 新回合落地后，把旧版本挂到新回复上，版本切换器才有得切
-        if let last = messages.last, !last.isUser {
-            patch(last.id) { $0.priorVersions = history }
-        }
+        patch(newAssistantId) { $0.priorVersions = history }
+        return true
     }
 
     // MARK: - 编辑 / 删除

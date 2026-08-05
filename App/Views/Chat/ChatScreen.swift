@@ -28,6 +28,7 @@ struct ChatScreen: View {
     @State private var picked: Set<String> = []
     @State private var confirmDeleteMany = false
     @State private var pendingDelete: String?
+    @State private var pendingRetry: UiMessage?
     @State private var shareText: String?
 
     // 搜索
@@ -47,11 +48,14 @@ struct ChatScreen: View {
     @State private var toastTask: Task<Void, Never>?
     @State private var versionIndex: [String: Int] = [:]
     @State private var highlighted: String?
+    /// 当前 hosting 树已经提供的底部 inset（含键盘变化）。ChatChrome 只补差值，
+    /// 不能再把完整键盘高度叠上来。
+    @State private var systemBottomInset: CGFloat = 0
     /// 整点锚存在一个普通对象里，**不是 @State 值**——
     /// 滚动时 y 每帧都在变，写进 @State 会每帧重建 body，白烧一整页的布局。
     @State private var timeAnchors = ChatTimeAnchors()
-    /// 真实安全区与键盘高度。这一页所在的 hosting 树把安全区抹平了，
-    /// 拿不到系统的避让，只能自己从窗口取（见 ChatChrome）。
+    /// 窗口级静态安全区与键盘遮挡。宿主已经给出的动态 bottom inset 在本页另行实量，
+    /// 两者只补差值（见 ChatChrome）。
     @State private var chrome = ChatChrome()
 
     private let seeds = ["明早提醒我去河边", "这周我都干了什么", "把妈妈的腌菜方子记下来"]
@@ -71,13 +75,11 @@ struct ChatScreen: View {
                 name: $name,
                 offline: !network.isOnline,
                 pickedCount: picked.count,
+                safeTop: chrome.safeTop,
                 onBack: { if let onBack { onBack() } else { dismiss() } },
                 onCommitName: commitName,
                 onChangeAvatar: { flash("头像换图还没接上") }
             )
-            // 顶栏自己让开刘海 / 灵动岛：这棵树里 safeAreaInsets 已经是 0，
-            // 不补的话名字会被灵动岛压住（b28 真机）
-            .padding(.top, chrome.safeTop)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
 
             if let toast {
@@ -87,10 +89,11 @@ struct ChatScreen: View {
         }
         // 输入胶囊悬浮在卷轴之上 —— 走 overlay 而不是 safeAreaInset，
         // 才不会在底下垫出一条实色衬底。
-        // ⚠️ 原来这里写着「键盘避让照旧由安全区自动给」，**那个前提不成立**：
-        // 这一页所在的 hosting 树安全区已被抹平，overlay 拿不到任何避让。
-        // 避让改由 ChatChrome 听键盘通知自己算，见 bottomBar 的 padding。
-        .overlay(alignment: .bottom) { bottomBar }
+        // 宿主会给一部分键盘避让，具体多少由这里实量；底栏只补剩余差值。
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: {
+            systemBottomInset = max(0, $0)
+        }
+        .overlay(alignment: .bottom) { bottomBar(systemBottomInset: systemBottomInset) }
         .background(YY.page)
         .toolbar(.hidden, for: .navigationBar)
         .animation(.sceneStandard(0.24), value: toast)
@@ -143,6 +146,27 @@ struct ChatScreen: View {
             }
             Button("取消", role: .cancel) { pendingDelete = nil }
         }
+        .confirmationDialog(
+            "重新回答这条问题？",
+            isPresented: Binding(get: { pendingRetry != nil }, set: { if !$0 { pendingRetry = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("重新回答") {
+                guard let message = pendingRetry else { return }
+                pendingRetry = nil
+                Task {
+                    guard let session else { return }
+                    if await session.retry(assistantId: message.id) {
+                        versionIndex[message.id] = nil
+                    } else {
+                        flash("重答没有继续，已按服务器记录重新载入")
+                    }
+                }
+            }
+            Button("取消", role: .cancel) { pendingRetry = nil }
+        } message: {
+            Text("当前回答会被替换；取消不会改动对话。")
+        }
         .sheet(isPresented: Binding(get: { shareText != nil }, set: { if !$0 { shareText = nil } })) {
             if let shareText {
                 ChatShareSheet(text: shareText)
@@ -154,72 +178,73 @@ struct ChatScreen: View {
     // MARK: - 卷轴
 
     private var thread: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 25) {
-                if let session {
-                    if session.isEmpty {
-                        ChatEmptyState(seeds: seeds) { seed in
-                            draft = seed
-                            sendDraft()
-                        }
-                        .padding(.top, 60)
-                    } else {
-                        if !session.reachedTop {
-                            ChatLoadMoreRow()
-                                .onAppear { Task { await session.loadMore() } }
-                        }
-                        if let error = session.loadError {
-                            ChatLoadErrorRow(text: error) { Task { await session.load() } }
-                        }
-                        ForEach(session.rows) { row in
-                            rowView(row, session: session)
-                                .id(row.id)
+        GeometryReader { viewport in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 25) {
+                    if let session {
+                        if session.isEmpty {
+                            ChatEmptyState(seeds: seeds) { seed in
+                                draft = seed
+                                sendDraft()
+                            }
+                            .padding(.top, 60)
+                        } else {
+                            if !session.reachedTop {
+                                ChatLoadMoreRow()
+                                    .onAppear { Task { await session.loadMore() } }
+                            }
+                            if let error = session.loadError {
+                                ChatLoadErrorRow(text: error) { Task { await session.load() } }
+                            }
+                            ForEach(session.rows) { row in
+                                rowView(row, session: session)
+                                    .id(row.id)
+                            }
                         }
                     }
                 }
+                // 竖轴 ScrollView 仍可能被超宽子项撑大内容列；明确钉住列宽，
+                // 让 trace/审批卡的绘制越界不能把整列居中推到 x=-16。
+                .frame(width: max(0, viewport.size.width - 32), alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, headerHeight)
+                // 最后一条要能翻到悬浮胶囊上方
+                .padding(.bottom, dockHeight + 16)
+                .scrollTargetLayout()
             }
-            .padding(.horizontal, 16)
-            .padding(.top, headerHeight)
-            // 最后一条要能翻到悬浮胶囊上方
-            .padding(.bottom, dockHeight + 16)
-            .scrollTargetLayout()
-        }
-        .scrollPosition($scrollPos)
-        .scrollDismissesKeyboard(.interactively)
-        .mask {
-            // 两端淡出：内容滑到顶栏底下 / 输入胶囊底下时化掉，而不是被硬切。
-            // 停止点必须按**绝对点数**算——用百分比的话，屏幕一高，
-            // 淡出带就够不到顶栏底缘，正文会直接压在名字和搜索键上。
-            GeometryReader { proxy in
-                let h = max(proxy.size.height, 1)
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .clear, location: min(0.3, 34 / h)),
-                        .init(color: .black, location: min(0.4, 70 / h)),
-                        .init(color: .black, location: max(0.6, 1 - 22 / h)),
-                        .init(color: .clear, location: 1),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+            .scrollPosition($scrollPos)
+            .scrollDismissesKeyboard(.interactively)
+            .mask {
+                // 正文到实际顶栏底缘才重新显现，不再穿过名字和按钮。
+                GeometryReader { proxy in
+                    let h = max(proxy.size.height, 1)
+                    let revealStart = min(0.48, max(0, headerHeight - 24) / h)
+                    let revealEnd = min(0.52, max(headerHeight, 1) / h)
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .clear, location: revealStart),
+                            .init(color: .black, location: revealEnd),
+                            .init(color: .black, location: max(0.6, 1 - 22 / h)),
+                            .init(color: .clear, location: 1),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
             }
-        }
-        // ⚠️ 这个回调**每帧**都响。原来它每帧都做三件事：算一遍可见整点、写两个
-        // @State、再 cancel 掉旧 Task 建一个新 Task —— 等于滚动时每帧重建一次 body
-        // 外加一次任务调度。b28 真机上就是这条让整页发涩。
-        // 现在每帧只做「位移够不够 8 点」这一次比较，绝大多数帧到这里就返回了。
-        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
-            guard abs(y - timeAnchors.lastOffset) > 8 else { return }
-            timeAnchors.lastOffset = y   // 存在非 @Observable 的盒子里，写它不触发重绘
-            refreshTimeLabel()
-        }
-        // 显隐交给滚动相位：手一停就排一次隐藏，不再每帧排
-        .onScrollPhaseChange { _, phase in
-            if phase == .idle {
-                scheduleHideTimePill()
-            } else {
-                showTimePill()
+            // 这个回调每帧都响；只做一次 8pt 阈值比较，避免每帧重建 body。
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
+                guard abs(y - timeAnchors.lastOffset) > 8 else { return }
+                timeAnchors.lastOffset = y
+                refreshTimeLabel()
+            }
+            .onScrollPhaseChange { _, phase in
+                if phase == .idle {
+                    scheduleHideTimePill()
+                } else {
+                    showTimePill()
+                }
             }
         }
     }
@@ -276,7 +301,7 @@ struct ChatScreen: View {
 
     // MARK: - 底部悬浮：输入胶囊 / 搜索条 / 多选工具条
 
-    private var bottomBar: some View {
+    private func bottomBar(systemBottomInset: CGFloat) -> some View {
         Group {
             switch mode {
             case .select:
@@ -307,11 +332,8 @@ struct ChatScreen: View {
                 .padding(.horizontal, 12)
             }
         }
-        // 键盘弹起时贴着键盘上沿浮，收起时让开 home 指示条。
-        // **这一层不能省**：overlay 拿不到系统的键盘避让（这棵 hosting 树的安全区
-        // 已经被抹平），原来那句"键盘避让照旧由安全区自动给"的前提不成立 ——
-        // b28 真机上键盘一弹，整条胶囊就被盖住了。
-        .padding(.bottom, chrome.bottomInset + 8)
+        // 只补系统没有给的那一段，避免完整键盘高度叠两次。
+        .padding(.bottom, chrome.supplementalBottomInset(systemBottomInset: systemBottomInset) + 8)
         .animation(.sceneHover(0.28), value: mode)
         // 卷轴按这个高度留出底部余量，最后一条才不会藏在胶囊底下
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dockHeight = $0 }
@@ -350,8 +372,7 @@ struct ChatScreen: View {
 
     private func retry(_ message: UiMessage) {
         guard let session, !session.isStreaming else { return }
-        versionIndex[message.id] = nil
-        Task { await session.retry(assistantId: message.id) }
+        pendingRetry = message
     }
 
     private func togglePick(_ id: String) {
