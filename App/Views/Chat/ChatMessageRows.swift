@@ -18,7 +18,9 @@ struct ChatMessageRow: View {
     var onPick: () -> Void
     var onAction: (ChatMessageAction) -> Void
 
-    private let bubbleShape = RoundedRectangle(cornerRadius: 19, style: .continuous)
+    /// 大圆角照 GPT 参考（2026-08-06 #11，入库截图为准）：形态是它的，
+    /// 颜色翻译进纸面色板 —— 浅纸白填充 + 细墨虚线，不再是 2px 粗鼠尾草圈。
+    private let bubbleShape = RoundedRectangle(cornerRadius: 24, style: .continuous)
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 11) {
@@ -42,28 +44,35 @@ struct ChatMessageRow: View {
     // MARK: - 你的话
 
     private var userBubble: some View {
-        HStack(alignment: .center, spacing: 9) {
+        VStack(alignment: .trailing, spacing: 8) {
             // 寄出中**什么都不显示**：从点发送到出字都是「在等模型」，
             // 拆成几个阶段报给用户没有意义（祐祐 2026-08-04）。只有失败才需要出面。
             Text(message.text)
                 .font(.system(size: 17))
                 .lineSpacing(17 * 0.3)
-                .foregroundStyle(YY.ink700)
-                .padding(.horizontal, 17)
-                .padding(.vertical, 12)
+                .foregroundStyle(YY.ink800)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 13)
+                .background(YY.cream50.opacity(0.92), in: bubbleShape)
                 .overlay {
                     bubbleShape.strokeBorder(
-                        YY.sage400,
-                        style: StrokeStyle(lineWidth: 2, dash: [5, 4])
+                        YY.ink300.opacity(0.55),
+                        style: StrokeStyle(lineWidth: 1.2, dash: [3.5, 3.5])
                     )
                 }
                 .contentShape(.contextMenuPreview, bubbleShape)
-                .frame(maxWidth: 288, alignment: .trailing)
+                .frame(maxWidth: 300, alignment: .trailing)
                 .fixedSize(horizontal: false, vertical: true)
                 .chatMenu(isUser: true, enabled: !selecting, onAction: onAction)
 
             if message.status == .error {
-                ChatFailMark(action: { onAction(.edit) })
+                // 统一报错行（#14）：点一下回到输入框改了重发
+                ChatErrorNote(
+                    text: "没寄出去，轻点重发",
+                    tone: .danger,
+                    detail: message.errorText
+                ) { onAction(.edit) }
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
         .animation(.sceneStandard(0.26), value: message.status)
@@ -79,14 +88,15 @@ struct ChatMessageRow: View {
     /// b29 那个「上下滑像掉帧」的解析开销归它治，我们不该再手搓一份。
     private var agentBody: some View {
         ChatMarkdownBody(text: message.text, animate: message.status == .streaming)
+            // 行宽硬钳位（#9 残余）：正文是 UIKit representable，代码块/表格一宽起来
+            // `maxWidth: .infinity` 拦不住（b30 截图里代码块直接淌出右缘）。
+            // 钳到「卷轴宽 − 两侧 16pt − 多选圈让位」，越界只能它内部自己滚。
+            .containerRelativeFrame(.horizontal, alignment: .leading) { length, _ in
+                max(0, length - 32 - (selecting ? 36 : 0))
+            }
             .frame(maxWidth: .infinity, alignment: .leading)
-            // ⚠️ 正文这块现在**吃手势**（b30 起）——不然代码块的拷贝钮是幽灵。
-            // 于是长按会不会被段落底下那个 `isSelectable` 的 UITextView 抢走、
-            // 让这张行菜单弹不出来，是个待实测的问题：先前那版一刀切关掉命中，
-            // 是**按推测**避让的，从没验证过冲突真的存在。这版放回去，装机看。
-            // 真被抢了再谈取舍（包里有 `textContextMenu` 能把菜单项塞进系统编辑菜单）。
-            //
-            // 空正文时整块没有可命中区域，这里补一块形状兜底。
+            // 正文那层已经 `.allowsHitTesting(false)`，这里得重新给外层一块可命中的形状，
+            // 否则长按落在空处，行菜单一样弹不出来。
             .contentShape(Rectangle())
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14, style: .continuous))
             .chatMenu(isUser: false, enabled: !selecting, onAction: onAction)
@@ -155,37 +165,6 @@ struct ChatSelectBox: View {
         }
         .buttonStyle(.plain)
         .transition(.opacity)
-    }
-}
-
-/// 未送达：气泡右侧一枚朱红小圈，轻点重发 —— 同样不写字，话留给 VoiceOver
-struct ChatFailMark: View {
-    var action: () -> Void
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breathe = false
-
-    var body: some View {
-        Button(action: action) {
-            Circle()
-                .strokeBorder(YY.danger, lineWidth: 1.6)
-                .overlay {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(YY.danger)
-                }
-                .frame(width: 22, height: 22)
-                .opacity(breathe ? 0.55 : 1)
-                .frame(width: 34, height: 34)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.sceneStandard(0.9).repeatForever(autoreverses: true)) { breathe = true }
-        }
-        .transition(.opacity.combined(with: .scale(scale: 0.6)))
-        .accessibilityLabel("没送出去，轻点重发")
     }
 }
 

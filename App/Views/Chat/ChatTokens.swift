@@ -121,10 +121,95 @@ struct ChatBackdrop: View {
             .scaledToFill()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-            .ignoresSafeArea()
-            .background(YY.page.ignoresSafeArea())
+            // regions 显式给 .all：容器 + 键盘一起豁免。键盘弹起时壁纸寸步不让（#3），
+            // 宿主侧还把它挂到了 NavigationStack 外面，双保险。
+            .ignoresSafeArea(.all)
+            .background(YY.page.ignoresSafeArea(.all))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+}
+
+// MARK: - 自绘图标语言（2026-08-06 #15）
+//
+// 对标首页底栏那套 PNG 线稿（Media/art/tabbar/*.png）：**单色细线、圆头圆折、
+// 无填充、无容器**。会话页所有自绘 glyph 从这里出——24 视框、1.7pt 描边、
+// round cap/join；SF Symbols 该系统的照旧归系统。
+
+enum YYGlyph {
+    /// 统一描边：改粗细只许改这里
+    static func stroke(_ width: CGFloat = 1.7) -> StrokeStyle {
+        StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round)
+    }
+}
+
+/// 重答/重试：手绕的一个圈，收笔越过起笔、带一个小箭头 ——
+/// 「再来一遍」的手势本身。替换掉旧的 DS 弧+直角折（2026-08-06 #6/#14 点名难看）。
+struct GlyphRetry: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = Double(min(rect.width, rect.height)) / 24
+        let cx = Double(rect.midX)
+        let cy = Double(rect.midY)
+        var p = Path()
+
+        // 圈：从上方偏左起笔，顺时针绕 335°，半径微涨 —— 像手画的，不是圆规画的
+        let steps = 56
+        let startDeg = -100.0
+        let endDeg = 235.0
+        var tail = CGPoint.zero
+        var tangent = (dx: 1.0, dy: 0.0)
+        for i in 0...steps {
+            let t = Double(i) / Double(steps)
+            let a = (startDeg + (endDeg - startDeg) * t) * Double.pi / 180
+            let r = (7.4 + 1.8 * t) * s
+            let pt = CGPoint(x: cx + cos(a) * r, y: cy + sin(a) * r)
+            if i == 0 {
+                p.move(to: pt)
+            } else {
+                p.addLine(to: pt)
+                if i == steps {
+                    tangent = (dx: Double(pt.x - tail.x), dy: Double(pt.y - tail.y))
+                }
+            }
+            tail = pt
+        }
+
+        // 箭头：两根倒刺沿收笔方向张开（±150°），一眼读出「转回去再来」
+        let len = (tangent.dx * tangent.dx + tangent.dy * tangent.dy).squareRoot()
+        guard len > 0 else { return p }
+        let ux = tangent.dx / len
+        let uy = tangent.dy / len
+        let barb = 3.6 * s
+        for deg in [150.0, -150.0] {
+            let a = deg * Double.pi / 180
+            let bx = ux * cos(a) - uy * sin(a)
+            let by = ux * sin(a) + uy * cos(a)
+            p.move(to: tail)
+            p.addLine(to: CGPoint(x: Double(tail.x) + bx * barb, y: Double(tail.y) + by * barb))
+        }
+        return p
+    }
+}
+
+/// 思考链的品牌图形（#17）：一缕卷起来的墨丝。不是星星，不带容器 ——
+/// 想法还没成形，先卷着。
+struct GlyphThoughtCurl: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height) / 24
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        var p = Path()
+        let steps = 56
+        let turns = 1.7
+        let rMax = 8.8 * Double(s)
+        let rMin = 1.8 * Double(s)
+        for i in 0...steps {
+            let t = Double(i) / Double(steps)
+            let a = -Double.pi / 2.6 + t * turns * 2 * Double.pi
+            let r = rMax - (rMax - rMin) * t
+            let pt = CGPoint(x: c.x + CGFloat(cos(a) * r), y: c.y + CGFloat(sin(a) * r))
+            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+        }
+        return p
     }
 }
 

@@ -2,6 +2,13 @@ import Foundation
 import Observation
 import YushiKit
 
+/// 会话内搜索的一条命中：结果卡要摘要和时间，不只 id
+struct ChatSearchHit: Identifiable, Equatable {
+    let id: String
+    let text: String
+    let sentAt: String
+}
+
 /// 会话页状态机：快照加载 → 乐观发送 → 按 turnId 订阅事件流逐条归约 → 收尾补一次已读。
 /// 归约规则在 Core（ChatReducer.swift）；这里只管网络回合、消息数组，以及派生行的缓存。
 /// 编排原型是已删除的网页版 Chat.tsx（考古翻 99fc044 之前）。
@@ -22,6 +29,9 @@ final class ChatSession {
     private var turnStarting = false
     private(set) var loadingMore = false
     private(set) var reachedTop = false
+    /// 首次快照是否已经回来（成败都算）。空态只许在这之后判断 ——
+    /// 拉取期间 messages 是空的，直接按空态画就是「进页先闪一下空态」（2026-08-06 #13）。
+    private(set) var loaded = false
     /// 最近一条**自己发出去**的消息 id。会话页据此把它顶到视口顶端
     /// （ChatGPT / Claude 式 anchor-to-top-on-send，不是 IM 的 stick-to-bottom）。
     /// 乐观发送先落 temp id、POST 回来换真 id —— 两处都要更新，
@@ -29,7 +39,7 @@ final class ChatSession {
     private(set) var lastUserMessageId: String?
 
     var isStreaming: Bool { turnStarting || activeTurnId != nil }
-    var isEmpty: Bool { messages.isEmpty && loadError == nil }
+    var isEmpty: Bool { loaded && messages.isEmpty && loadError == nil }
 
     init(client: GatewayClient?, item: ContactListItem) {
         self.client = client
@@ -43,6 +53,7 @@ final class ChatSession {
     func load() async {
         guard let client else {
             loadError = "还没连上网关 · 去「案头」填地址和令牌"
+            loaded = true
             return
         }
         do {
@@ -52,9 +63,11 @@ final class ChatSession {
             replaceMessages(snapshot.messages.map(UiMessage.init(from:)))
             loadError = nil
             reachedTop = snapshot.messages.count < 50
+            loaded = true
             try? await client.markRead(conversationId: snapshot.conversationId)
         } catch {
             loadError = error.localizedDescription
+            loaded = true
         }
     }
 
@@ -103,6 +116,10 @@ final class ChatSession {
     }
 
     /// 已占住 single-flight 门闩后的实际发送。成功返回新 assistant id，POST 失败返回 nil。
+    ///
+    /// assistant 占位也走乐观：POST 一来一回有一两秒，占位若等它回来才落地，
+    /// 这段时间页面纹丝不动，就是「点了没反应」（2026-08-06 #6 的一半）。
+    /// 先落 temp 占位让呼吸墨点立刻出现，POST 回来换真 id；失败连占位一起收走。
     private func performSend(
         _ text: String,
         replyTo: String?,
@@ -110,11 +127,13 @@ final class ChatSession {
         conversationId: String
     ) async -> String? {
         let tempId = "temp-\(UUID().uuidString)"
+        let tempAssistantId = "temp-assistant-\(UUID().uuidString)"
         let now = ChatSession.isoNow()
         appendMessage(
             UiMessage(id: tempId, author: "user", status: .sending, text: text, sentAt: now, replyTo: replyTo)
         )
         lastUserMessageId = tempId
+        appendMessage(UiMessage(id: tempAssistantId, author: "contact", status: .streaming, sentAt: now))
 
         do {
             let res = try await client.sendMessage(conversationId: conversationId, text: text, replyTo: replyTo)
@@ -124,11 +143,12 @@ final class ChatSession {
             }
             lastUserMessageId = res.userMessageId
             let assistantId = res.assistantMessageId ?? "assistant-\(res.turnId)"
-            appendMessage(UiMessage(id: assistantId, author: "contact", status: .streaming, sentAt: now))
+            patch(tempAssistantId) { $0.id = assistantId }
             activeTurnId = res.turnId
             await run(turnId: res.turnId, assistantId: assistantId, client: client)
             return assistantId
         } catch {
+            messages.removeAll { $0.id == tempAssistantId }
             patch(tempId) {
                 $0.status = .error
                 $0.errorText = error.localizedDescription
@@ -147,6 +167,11 @@ final class ChatSession {
     /// 网关没有 regenerate 端点，且上下文是从扁平历史组装的——旧那一轮必须先删掉，
     /// 否则新回合会把上一版答案一起喂回去。旧正文留在客户端当历史版本（本次会话内有效）。
     /// 分支树落库是独立一批的事（祐祐 2026-08-03 定）。
+    ///
+    /// **先摘后删**（2026-08-06 #6）：旧回合在任何网络请求之前就从页面上摘掉 ——
+    /// 原实现要等两次串行 DELETE 走完才有第一帧变化，弱网下就是十几秒的「点了没反应」。
+    /// DELETE 是幂等的（网关删不存在的 id 也回 ok），失败只可能是网络层，
+    /// 那时按服务端快照回灌、停止重发。两次删除并行，砍一半来回。
     @discardableResult
     func retry(assistantId: String) async -> Bool {
         guard let client, let conversationId, !isStreaming,
@@ -165,16 +190,19 @@ final class ChatSession {
         var history = assistant.priorVersions
         if !assistant.text.isEmpty { history.append(assistant.text) }
 
+        // 乐观：旧回合当场消失，「操作已生效」在第一帧就看得见
+        messages.removeAll { $0.id == assistant.id || $0.id == user.id }
+        rebuildRows()
+
         do {
-            try await client.deleteMessage(id: assistant.id)
-            try await client.deleteMessage(id: user.id)
+            async let deleteAssistant: Void = client.deleteMessage(id: assistant.id)
+            async let deleteUser: Void = client.deleteMessage(id: user.id)
+            _ = try await (deleteAssistant, deleteUser)
         } catch {
-            // 旧实现吞掉删除错误后仍继续 send，会把旧问题复制一份。失败时以服务端快照纠偏并停下。
+            // 删除没送达：旧回合可能还在服务端。按服务端快照纠偏（旧回合会回来），不重发。
             await load()
             return false
         }
-        messages.removeAll { $0.id == assistant.id || $0.id == user.id }
-        rebuildRows()
 
         guard let newAssistantId = await performSend(
             user.text,
@@ -214,13 +242,13 @@ final class ChatSession {
 
     // MARK: - 搜索
 
-    /// 返回命中的消息 id，按时间正序（和卷轴一个方向）
-    func search(_ query: String) async -> [String] {
+    /// 返回命中（新的在前，结果卡从上往下读）。卡片要摘要和时间，所以带整段文本回去。
+    func search(_ query: String) async -> [ChatSearchHit] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, let client, let conversationId else { return [] }
         guard let found = try? await client.searchMessages(conversationId: conversationId, query: q, limit: 30)
         else { return [] }
-        return found.map(\.id).reversed()
+        return found.map { ChatSearchHit(id: $0.id, text: $0.textContent, sentAt: $0.sentAt) }
     }
 
     // MARK: - 联系人

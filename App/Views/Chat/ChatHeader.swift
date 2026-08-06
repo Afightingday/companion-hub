@@ -31,52 +31,66 @@ struct ChatOfflinePill: View {
     }
 }
 
-/// 会话内搜索：对位会话总览页的范式 —— 直接用那边同一枚 `NativeSearchBar`（UISearchBar 原件，
-/// 自带放大镜/清空/取消与拼音组合期保护），贴在键盘上方。
-/// 卷轴留在原地继续显示命中高亮；命中计数与上下跳做成一枚窄玻璃丸浮在搜索条正上方。
-struct ChatSearchDock: View {
-    @Binding var query: String
-    let hitLabel: String
-    var onPrev: () -> Void
-    var onNext: () -> Void
-    var onClose: () -> Void
-
-    private var hasQuery: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+/// 会话内搜索的结果卡（#12，照抄会话首页 SearchVeilView.resultsPanel 的形态）：
+/// 清透玻璃、顶部向下按命中数自适应；命中多了卡内自己滚，不往键盘底下钻。
+/// 底部输入条直接复用首页那枚 `NativeSearchBar`（UISearchBar 原件，
+/// 自带放大镜/清空/取消与拼音组合期保护），在 ChatScreen.bottomBar 的 .search 档。
+struct ChatSearchResultsCard: View {
+    let hits: [ChatSearchHit]
+    /// 这一轮检索是否已经回来（区分「找着呢」和「真没有」）
+    let searched: Bool
+    var onPick: (String) -> Void
 
     var body: some View {
-        VStack(spacing: 9) {
-            if hasQuery {
-                HStack(spacing: 2) {
-                    Text(hitLabel)
-                        .font(.yyMono(12))
-                        .tracking(0.5)
-                        .foregroundStyle(YY.ink500)
-                        .padding(.trailing, 6)
-                    stepper("chevron.up", action: onPrev)
-                    stepper("chevron.down", action: onNext)
+        Group {
+            if hits.isEmpty {
+                Text(searched ? "没找着，换个词试试" : "找着呢…")
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(YY.ink500)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 22)
+            } else {
+                // 命中少就按内容长，多了封顶改卡内滚动（Spotlight 式）
+                ViewThatFits(in: .vertical) {
+                    hitList
+                    ScrollView { hitList }
                 }
-                .padding(.leading, 15)
-                .padding(.trailing, 5)
-                .padding(.vertical, 4)
-                .yyGlassFloat(Capsule())
-                .transition(.opacity.combined(with: .offset(y: 6)))
             }
-
-            NativeSearchBar(text: $query, placeholder: "搜索这个对话", onCancel: onClose)
-                .frame(height: 52)
         }
-        .animation(.sceneStandard(0.24), value: hasQuery)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .glassEffect(.clear, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .frame(maxHeight: 420, alignment: .top)
     }
 
-    private func stepper(_ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(YY.ink500)
-                .frame(width: 32, height: 30)
-                .contentShape(Rectangle())
+    private var hitList: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(hits.enumerated()), id: \.element.id) { i, hit in
+                if i > 0 {
+                    Divider().overlay(YY.cream500.opacity(0.55))
+                }
+                Button {
+                    onPick(hit.id)
+                } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        Text(hit.text)
+                            .font(.system(size: 14.5))
+                            .foregroundStyle(YY.ink700)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(PaperFormat.shortTime(hit.sentAt))
+                            .font(.yyMono(11))
+                            .foregroundStyle(YY.ink400)
+                            .padding(.top, 2)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
     }
 }
 

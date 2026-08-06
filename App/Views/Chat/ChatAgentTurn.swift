@@ -94,30 +94,16 @@ struct ChatAgentTurn: View {
         return copy
     }
 
-    /// 没写完 / 被打断：一截断掉的虚线接一枚回环箭头 —— 不写「点击重试」那种话，
-    /// 该说的话留给 VoiceOver
+    /// 没写完 / 被打断：统一报错行（#14）。自己按停的不算事故，走墨灰；
+    /// 真断了才用朱陶红。原始报错不上屏，留给 VoiceOver。
     private var brokenNote: some View {
         let aborted = message.status == .aborted
-        return Button {
-            Haptic.lightTap()
-            onRetry()
-        } label: {
-            HStack(spacing: 10) {
-                ChatBrokenStub()
-                ZStack {
-                    ChatRetryArc()
-                        .stroke(style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-                    ChatRetryTick()
-                        .stroke(style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-                }
-                .frame(width: 18, height: 18)
-            }
-            .foregroundStyle(aborted ? YY.ink300 : YY.danger)
-            .frame(height: 32)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(aborted ? "写到这儿停了，轻点续上" : (message.errorText ?? "没写完，轻点重试"))
+        return ChatErrorNote(
+            text: aborted ? "写到这儿停了，轻点续上" : "这条没写完，轻点重试",
+            tone: aborted ? .muted : .danger,
+            detail: aborted ? nil : message.errorText,
+            onTap: onRetry
+        )
     }
 
     private var actionsRow: some View {
@@ -161,23 +147,8 @@ struct ChatAgentTurn: View {
     }
 }
 
-/// 那截断掉的虚线：左浓右淡，尾巴悬空 —— 一眼是「这里断了」
-private struct ChatBrokenStub: View {
-    var body: some View {
-        Path { p in
-            p.move(to: CGPoint(x: 0, y: 1))
-            p.addLine(to: CGPoint(x: 30, y: 1))
-        }
-        .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [2, 5]))
-        .frame(width: 30, height: 2)
-        .mask {
-            LinearGradient(colors: [.black, .black.opacity(0.15)], startPoint: .leading, endPoint: .trailing)
-        }
-        .accessibilityHidden(true)
-    }
-}
-
-/// 重答：点一下，箭头的两笔重新描一遍（对位设计稿的 stroke-dashoffset 动画）
+/// 重答：点一下，那个手绕的圈重新描一遍（对位设计稿的 stroke-dashoffset 动画）。
+/// 图形换成 GlyphRetry（#15 统一线稿语言），描边随全套规格走。
 struct ChatRetryGlyph: View {
     var action: () -> Void
 
@@ -195,48 +166,15 @@ struct ChatRetryGlyph: View {
             withAnimation(.sceneStandard(0.55)) { drawn = 1 }
             withAnimation(.sceneStandard(0.22).delay(0.4)) { hot = false }
         } label: {
-            ZStack {
-                ChatRetryArc()
-                    .trim(from: 0, to: drawn)
-                    .stroke(style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-                ChatRetryTick()
-                    .trim(from: 0, to: drawn)
-                    .stroke(style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-            }
-            .foregroundStyle(hot ? YY.sage600 : YY.ink300)
-            .frame(width: 19, height: 19)
-            .frame(width: 34, height: 34)
-            .contentShape(Rectangle())
+            GlyphRetry()
+                .trim(from: 0, to: drawn)
+                .stroke(style: YYGlyph.stroke())
+                .foregroundStyle(hot ? YY.sage600 : YY.ink300)
+                .frame(width: 20, height: 20)
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("重答一次")
-    }
-}
-
-/// 24×24 视框里那道大圆弧：M20.6 12.4 a8.6 8.6 0 1 1 -3 -6.6
-private struct ChatRetryArc: Shape {
-    func path(in rect: CGRect) -> Path {
-        let s = min(rect.width, rect.height) / 24
-        var path = Path()
-        path.addArc(
-            center: CGPoint(x: rect.minX + 12 * s, y: rect.minY + 12 * s),
-            radius: 8.6 * s,
-            startAngle: .degrees(2.7),
-            endAngle: .degrees(312.1),
-            clockwise: false
-        )
-        return path
-    }
-}
-
-/// 箭头那一折：M20.9 4.2 v5.2 h-5.2
-private struct ChatRetryTick: Shape {
-    func path(in rect: CGRect) -> Path {
-        let s = min(rect.width, rect.height) / 24
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX + 20.9 * s, y: rect.minY + 4.2 * s))
-        path.addLine(to: CGPoint(x: rect.minX + 20.9 * s, y: rect.minY + 9.4 * s))
-        path.addLine(to: CGPoint(x: rect.minX + 15.7 * s, y: rect.minY + 9.4 * s))
-        return path
     }
 }

@@ -42,12 +42,14 @@ struct ChatScreen: View {
 
     // 搜索
     @State private var query = ""
-    @State private var hits: [String] = []
-    @State private var hitIndex = 0
+    @State private var hits: [ChatSearchHit] = []
+    @State private var searched = false
     @State private var searchTask: Task<Void, Never>?
 
     // 卷轴
     @State private var scrollPos = ScrollPosition(edge: .bottom)
+    /// anchor-to-top 的重申任务：布局要几帧才把尾部空白撑出来，一次 scrollTo 常常扑空
+    @State private var pinTask: Task<Void, Never>?
     /// 被顶到视口顶端的那条自己的消息。它把卷轴切成「历史」和「本轮」两段，
     /// 尾部补一块动态空白，保证本轮还没生成内容时也有地方可顶。
     @State private var pinnedUserId: String?
@@ -84,11 +86,14 @@ struct ChatScreen: View {
     var body: some View {
         NavigationStack {
             thread
-                .background { ChatBackdrop() }
+                // 悬浮钮在 safeAreaInset **之前**挂：它的底缘＝输入条上沿。
+                // 之前挂在 safeAreaInset 之后，底缘是屏幕底，钮直接压在输入条上（#1）。
+                .overlay(alignment: .bottom) { nubButton }
+                // 搜索覆层也只罩卷轴区，不碰底下的搜索条
+                .overlay { searchVeil }
                 .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
                 .overlay(alignment: .top) { safeTopProbe }
                 .overlay(alignment: .top) { floatingPills }
-                .overlay(alignment: .bottom) { nubButton }
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
                 .task {
@@ -104,7 +109,7 @@ struct ChatScreen: View {
                 .onChange(of: mode) { _, value in
                     if value != .select { picked = [] }
                     if value == .search { query = "" }
-                    if value != .search { hits = []; hitIndex = 0 }
+                    if value != .search { hits = []; searched = false }
                 }
                 // 自己的话一落地就把它顶到视口顶端（temp id → 真 id 会变两次，都要跟）
                 .onChange(of: session?.lastUserMessageId) { _, id in
@@ -150,6 +155,9 @@ struct ChatScreen: View {
                     }
                 }
         }
+        // 壁纸挂在 NavigationStack **外面**：栈内任何一层都可能跟着键盘调安全区，
+        // 挂外面拿到的是 cover 的整幅边界，键盘开合与它无关（#3 壁纸被顶走）。
+        .background { ChatBackdrop() }
     }
 
     // MARK: - 系统导航栏
@@ -167,9 +175,7 @@ struct ChatScreen: View {
             }
         } else {
             ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    if let onBack { onBack() } else { dismiss() }
-                } label: {
+                Button(action: goBack) {
                     Image(systemName: "chevron.backward")
                 }
                 .accessibilityLabel("返回")
@@ -244,13 +250,34 @@ struct ChatScreen: View {
         commitName()
     }
 
+    /// 退回首页。键盘还挂着第一响应者时同帧撤 cover，系统偶发把这次撤场吃掉
+    /// （#7「第一下点了没反应」的样子）——先放焦点，下一循环再退，一次点击稳定生效。
+    private func goBack() {
+        let hadFocus = inputFocused || nameFocused
+        inputFocused = false
+        nameFocused = false
+        if hadFocus {
+            Task { @MainActor in
+                await Task.yield()
+                if let onBack { onBack() } else { dismiss() }
+            }
+        } else if let onBack {
+            onBack()
+        } else {
+            dismiss()
+        }
+    }
+
     // MARK: - 卷轴
 
     private var thread: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 25) {
                 if let session {
-                    if session.isEmpty {
+                    if !session.loaded {
+                        // 首屏快照没回来之前什么都不画 —— 纸面本身就是加载态。
+                        // 在这儿画空态就是「进页先闪一下空态再冒出历史」（#13）。
+                    } else if session.isEmpty {
                         ChatEmptyState(seeds: seeds) { seed in
                             draft = seed
                             sendDraft()
@@ -299,7 +326,9 @@ struct ChatScreen: View {
         // 只钉**首屏**落底。绝不要 .sizeChanges —— 那是 stick-to-bottom，
         // 会把自己刚发的话顶到输入框底下，键盘一弹还会锚到空白区。
         .defaultScrollAnchor(.bottom, for: .initialOffset)
-        .scrollDismissesKeyboard(.interactively)
+        // .immediately：手一滑就收（#4）。.interactively 要一路拖到键盘边缘才开始让，
+        // 在聊天里等于「往下滑键盘纹丝不动」。
+        .scrollDismissesKeyboard(.immediately)
         // 内容不足一屏时也要能拖，否则下滑收键盘的手势根本没得触发
         .scrollBounceBehavior(.always)
         // 只柔化顶缘：底下的输入条已经是厚磨砂，不用再叠一层实时模糊（省一半开销）
@@ -319,6 +348,10 @@ struct ChatScreen: View {
             updateNub(offsetY: y)
         }
         .onScrollPhaseChange { _, phase in
+            // 手动滚动永远优先：手指一搭上卷轴，锚顶重申立刻作废
+            if phase == .tracking || phase == .interacting {
+                pinTask?.cancel()
+            }
             if phase == .idle {
                 scheduleHideTimePill()
             } else {
@@ -339,14 +372,23 @@ struct ChatScreen: View {
         return max(0, viewportHeight - pinnedTailHeight - 16)
     }
 
-    /// 把这条自己的消息顶到视口顶端。先落 pin 让尾部空白撑起来，**下一帧**再滚 ——
+    /// 把这条自己的消息顶到视口顶端。先落 pin 让尾部空白撑起来，再滚 ——
     /// 同一帧里滚是滚不动的，那时还没有可供上顶的空间。
+    ///
+    /// **只滚一次常常扑空**（#8 真机「发出去不动」）：空白高度靠 onGeometryChange
+    /// 两次回报才算得出来，几帧之内目标位置一直在变，太早的那次 scrollTo 白滚。
+    /// 这里对同一目标重申三次（50/300/950ms），布局稳到哪次就哪次生效；
+    /// 用户手指一搭上卷轴整个任务作废（onScrollPhaseChange 里取消）。
     private func pinToTop(_ id: String) {
         pinnedUserId = id
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(32))
-            withAnimation(reduceMotion ? nil : .sceneOut(0.38)) {
-                scrollPos.scrollTo(id: id, anchor: .top)
+        pinTask?.cancel()
+        pinTask = Task { @MainActor in
+            for delay in [50, 250, 650] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard !Task.isCancelled else { return }
+                withAnimation(reduceMotion ? nil : .sceneOut(0.38)) {
+                    scrollPos.scrollTo(id: id, anchor: .top)
+                }
             }
         }
     }
@@ -404,6 +446,10 @@ struct ChatScreen: View {
 
     // MARK: - 方向感知悬浮钮
 
+    /// 键盘弹着（#3）或不在闲逛模式时整个收起；形状是**正圆**玻璃（#1 #10），
+    /// 走首页搜索钮同款 `.buttonStyle(.glass)` + `.buttonBorderShape(.circle)`（真机已验的组合）。
+    private var nubShown: Bool { nub != .hidden && !inputFocused && mode == .idle }
+
     /// 往上翻历史 → 放大镜；往下滑 → 回底箭头；贴近底部 → 收起。
     /// 换态只换图标不换容器，用 symbol replace 过渡。
     private var nubButton: some View {
@@ -422,23 +468,24 @@ struct ChatScreen: View {
             }
         } label: {
             Image(systemName: nub == .search ? "magnifyingglass" : "arrow.down")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(YY.ink600)
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)
                 .contentTransition(.symbolEffect(.replace.downUp))
         }
         .buttonStyle(.glass)
-        .buttonBorderShape(.capsule)
-        .opacity(nub == .hidden ? 0 : 1)
-        .scaleEffect(nub == .hidden ? 0.85 : 1)
-        .allowsHitTesting(nub != .hidden)
+        .buttonBorderShape(.circle)
+        .opacity(nubShown ? 1 : 0)
+        .scaleEffect(nubShown ? 1 : 0.85)
+        .allowsHitTesting(nubShown)
         .animation(
             reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.8),
             value: nub
         )
-        .padding(.bottom, 12) // 距输入框上沿
+        .animation(.sceneStandard(0.24), value: nubShown)
+        .padding(.bottom, 12) // 距输入条上沿（overlay 挂在 safeAreaInset 之前，底缘就是输入条上沿）
         .accessibilityLabel(nub == .search ? "搜索这个对话" : "回到最新")
-        .accessibilityHidden(nub == .hidden)
+        .accessibilityHidden(!nubShown)
     }
 
     /// 方向反转要**累计**超过 24pt 才切换。少了这道防抖，手指微微一抖图标就来回跳。
@@ -482,7 +529,7 @@ struct ChatScreen: View {
                 ChatOfflinePill()
             }
             ZStack {
-                ChatTimePill(label: timeLabel, visible: timeVisible && mode != .select)
+                ChatTimePill(label: timeLabel, visible: timeVisible && (mode == .idle || mode == .contact))
                 if let toast {
                     ChatToast(text: toast)
                 }
@@ -506,14 +553,10 @@ struct ChatScreen: View {
                     onDelete: { confirmDeleteMany = true }
                 )
             case .search:
-                ChatSearchDock(
-                    query: $query,
-                    hitLabel: hitLabel,
-                    onPrev: { stepHit(-1) },
-                    onNext: { stepHit(1) },
-                    onClose: { mode = .idle }
-                )
-                .padding(.horizontal, 4)
+                // 照抄会话首页（#12）：底下只有一条苹果原生搜索栏，命中都在上面的玻璃卡里
+                NativeSearchBar(text: $query, placeholder: "搜索这个对话", onCancel: { mode = .idle })
+                    .frame(height: 52)
+                    .padding(.horizontal, 4)
             case .idle, .contact:
                 ChatComposer(
                     draft: $draft,
@@ -568,7 +611,7 @@ struct ChatScreen: View {
         versionIndex[message.id] = nil
         Task {
             if !(await session.retry(assistantId: message.id)) {
-                flash("重答没有继续，已按服务器记录重新载入")
+                flash("这次重答没有继续")
             }
         }
     }
@@ -596,30 +639,48 @@ struct ChatScreen: View {
 
     // MARK: - 搜索
 
-    private var hitLabel: String {
-        hits.isEmpty ? "0 条" : "\(hitIndex + 1)/\(hits.count) 条"
+    /// 会话内搜索覆层（#12，照抄首页 SearchVeilView 的骨架）：
+    /// 轻压暗 8%＋顶部清透玻璃结果卡；底部那条原生搜索栏走 bottomBar。
+    /// 挂在 safeAreaInset 之前，所以只罩卷轴区，搜索栏和键盘都在它上面。
+    @ViewBuilder
+    private var searchVeil: some View {
+        if mode == .search {
+            ZStack(alignment: .top) {
+                // 空白处点一下＝收起搜索（和首页一个手感）
+                Color.black.opacity(0.08)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { mode = .idle }
+
+                if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                    ChatSearchResultsCard(hits: hits, searched: searched, onPick: openHit)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 6)
+                }
+            }
+        }
+    }
+
+    /// 点中一条命中：收帘，翻到那条并柔光高亮
+    private func openHit(_ id: String) {
+        Haptic.lightTap()
+        mode = .idle
+        Task { await jump(to: id) }
     }
 
     private func scheduleSearch(_ value: String) {
         searchTask?.cancel()
         let q = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { hits = []; hitIndex = 0; return }
+        guard !q.isEmpty else { hits = []; searched = false; return }
+        searched = false
         searchTask = Task {
             try? await Task.sleep(for: .milliseconds(220))
             guard !Task.isCancelled, let session else { return }
             let found = await session.search(q)
             guard !Task.isCancelled else { return }
             hits = found
-            hitIndex = 0
-            if let first = found.first { await jump(to: first) }
+            searched = true
         }
-    }
-
-    private func stepHit(_ delta: Int) {
-        guard !hits.isEmpty else { return }
-        hitIndex = (hitIndex + delta + hits.count) % hits.count
-        let target = hits[hitIndex]
-        Task { await jump(to: target) }
     }
 
     /// 命中可能还没加载进来 —— 先往上翻到它，再滚过去并柔光高亮一下
@@ -739,14 +800,13 @@ private struct ChatLoadErrorRow: View {
     var onRetry: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             Text(text)
                 .font(.system(size: 13))
                 .foregroundStyle(YY.ink400)
                 .multilineTextAlignment(.center)
-            Button("再试一次", action: onRetry)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(YY.sage700)
+            // 统一报错行（#14）：全会话页「坏了、可以再试」都是这张脸
+            ChatErrorNote(text: "再试一次", tone: .muted, onTap: onRetry)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 18)

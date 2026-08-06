@@ -40,7 +40,7 @@ struct AntouView: View {
                 Section("迁移进度") {
                     LabeledContent("这一批", value: "聊天核心：发送 · 流式 · 过程行 · 审批卡")
                     LabeledContent("第 3 批", value: "群聊")
-                    LabeledContent("第 4 批", value: "食帖 · 留声 · 光阴瓶")
+                    LabeledContent("第 4 批", value: "食帖 · 留声")
                 }
 
                 Section("版本") {

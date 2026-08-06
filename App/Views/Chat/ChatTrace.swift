@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftStreamingMarkdown
 import YushiKit
 
 /// Agent 过程链 —— 设计系统 TraceLine 的 1:1 移植。
@@ -25,15 +24,15 @@ struct ChatTraceChain: View {
     }
 }
 
-/// 行与行之间那截 1px 虚线：落在 rail 的中轴上（x = 14）
+/// 行与行之间那截 1px 虚线：落在 rail 的中轴上（x = 11，槽宽 22 的中点）
 private struct ChatTraceConnector: View {
     var body: some View {
         Path { p in
-            p.move(to: CGPoint(x: 14, y: 0))
-            p.addLine(to: CGPoint(x: 14, y: 13))
+            p.move(to: CGPoint(x: 11, y: 0))
+            p.addLine(to: CGPoint(x: 11, y: 13))
         }
         .stroke(YY.sage300, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-        .frame(width: 28, height: 13)
+        .frame(width: 22, height: 13)
         .padding(.vertical, -3)
         .accessibilityHidden(true)
     }
@@ -48,7 +47,7 @@ struct ChatTraceLine: View {
     private var expandable: Bool { spec.full != nil || spec.detail != nil }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 10) {
             rail
             VStack(alignment: .leading, spacing: 0) {
                 row
@@ -62,38 +61,39 @@ struct ChatTraceLine: View {
                         .transition(.opacity.combined(with: .offset(y: -3)))
                 }
             }
-            .padding(.top, 5)
             .padding(.bottom, 10)
         }
     }
 
-    // 28pt rail，glyph 26pt 居中——槽位尺寸照 DS，留给平台原生动画字形
+    /// 裸 glyph 槽（#17 去掉圆容器和垫底纸）：22×19，高度对齐 label 首行行高、
+    /// 垂直居中即与文字同轴 —— 原来的一高一低（#16）就是 rail 自带的 4pt 下沉
+    /// 叠上正文 5pt 顶距造成的，这两截 padding 都不要了。
     private var rail: some View {
-        ZStack(alignment: .top) {
-            Color.clear
-            Group {
-                if let icon = spec.icon {
-                    Image(systemName: icon)
-                        .font(.system(size: 15, weight: .regular))
-                        .foregroundStyle(spec.thinking ? YY.sage500 : YY.ink400)
-                } else {
-                    Circle()
-                        .strokeBorder(YY.sage300, style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2.5]))
-                        .frame(width: 17, height: 17)
-                        .opacity(0.7)
-                }
+        Group {
+            if spec.thinking {
+                // 思考链的品牌图形：一缕卷起来的墨丝（#17，不是星星）
+                GlyphThoughtCurl()
+                    .stroke(style: YYGlyph.stroke(1.6))
+                    .foregroundStyle(YY.sage500)
+                    .padding(1)
+            } else if let icon = spec.icon {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(YY.ink400)
             }
-            .frame(width: 26, height: 26)
-            .background(YY.page, in: Circle())
-            .padding(.top, 4)
         }
-        .frame(width: 28)
+        .frame(width: 22, height: 19)
+        .accessibilityHidden(true)
     }
 
     private var row: some View {
         HStack(alignment: .top, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 9) {
-                headline
+                ChatShimmerText(
+                    open ? (spec.full ?? spec.label) : spec.label,
+                    running: spec.running,
+                    color: spec.thinking ? YY.sage600 : YY.ink500
+                )
                 if let target = spec.target, !target.isEmpty {
                     Text(target)
                         .font(.yyMono(13))
@@ -108,7 +108,8 @@ struct ChatTraceLine: View {
             if let meta = spec.meta, !meta.isEmpty {
                 Text(meta)
                     .font(.system(size: 13))
-                    .foregroundStyle(spec.failed ? YY.danger : YY.ink400)
+                    // 失败色并进统一报错语言（#14）：全会话页的「坏了」都是朱陶红
+                    .foregroundStyle(spec.failed ? YY.rose600 : YY.ink400)
                     .lineLimit(1)
                     // 这一行是整条过程链里唯一没有截断保护的刚性子项：`lineLimit(1)` 的 Text
                     // 会把自己的理想宽度当作硬需求，meta 一长就顶宽整行 → 整个正文列被撑宽 →
@@ -132,29 +133,6 @@ struct ChatTraceLine: View {
         }
     }
 
-    /// 这一行的头一句。
-    ///
-    /// **收起时**是一句摘要，走 `ChatShimmerText` —— 在想的时候要扫光，
-    /// 而扫光是靠遮罩一个 `Text` 做的，套不到 Markdown 那棵视图树上。
-    ///
-    /// **展开时**换成全文，这时才过 Markdown 渲染器（b30 祐祐点名「思考链里面的没渲染」）。
-    /// 模型的思考摘要里满是 `**加粗`、`-` 列表、行内代码，裸 `Text` 就是把星号原样摊在脸上。
-    /// 展开态一定不在 running（`running` 只在摘要为空时为真），所以不会丢扫光。
-    @ViewBuilder
-    private var headline: some View {
-        if open, let full = spec.full, !full.isEmpty {
-            // interactive: false —— 这一行要靠外层 onTapGesture 收起，
-            // 文字自己吃掉点击就再也收不起来了
-            ChatMarkdownBody(text: full, config: ChatMarkdown.trace, interactive: false)
-        } else {
-            ChatShimmerText(
-                spec.label,
-                running: spec.running,
-                color: spec.thinking ? YY.sage600 : YY.ink500
-            )
-        }
-    }
-
     // MARK: - part → 一行的展示规格
 
     private struct Spec {
@@ -174,11 +152,19 @@ struct ChatTraceLine: View {
     private var spec: Spec {
         switch part.payload {
         case .reasoningSummary(let text):
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // 思考摘要是模型的草稿，常夹着裸 markdown 记号（**加粗**、`码`、# 标题）。
+            // 这一行是纯文本 Text，不解析就会把星号原样露出来（2026-08-06 #16 截图里那样），
+            // 记号全剥掉只留字。
+            let plain = text
+                .replacingOccurrences(of: "**", with: "")
+                .replacingOccurrences(of: "__", with: "")
+                .replacingOccurrences(of: "`", with: "")
+                .replacingOccurrences(of: "#", with: "")
+            let trimmed = plain.trimmingCharacters(in: .whitespacesAndNewlines)
             let head = trimmed.split(separator: "\n").first.map(String.init) ?? trimmed
             let brief = head.count > 22 ? String(head.prefix(22)) + "…" : head
             return Spec(
-                icon: "sparkle",
+                icon: nil, // thinking 走 GlyphThoughtCurl，不占 SF 位
                 label: brief.isEmpty ? "在想怎么说" : brief,
                 // 收起看摘要、展开看全文，同一行原地换字——不再在下面把全文再抄一遍
                 full: trimmed.count > brief.count ? trimmed : nil,

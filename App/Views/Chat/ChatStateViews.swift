@@ -99,6 +99,48 @@ struct ChatSelectionBar: View {
     }
 }
 
+/// 统一的报错行（2026-08-06 #14）：一枚手绕的重来圈 + 一句短话，纸白药丸垫底。
+/// 会话页所有「坏了、可以再试」的地方都用这一张脸 ——
+/// 正文没写完 / 被打断、自己的话没寄出去、历史拉不下来，只分两种口气：
+/// `muted`（自己停的、不算事故）走墨灰，`danger`（真失败）走朱陶红。
+/// 具体原因不上屏（原始报错常常又长又洋），留给 VoiceOver。
+struct ChatErrorNote: View {
+    enum Tone { case muted, danger }
+
+    let text: String
+    let tone: Tone
+    var detail: String?
+    var onTap: () -> Void
+
+    private var ink: Color { tone == .danger ? YY.rose600 : YY.ink400 }
+
+    var body: some View {
+        Button {
+            Haptic.lightTap()
+            onTap()
+        } label: {
+            HStack(spacing: 8) {
+                GlyphRetry()
+                    .stroke(style: YYGlyph.stroke(1.6))
+                    .frame(width: 16, height: 16)
+                Text(text)
+                    .font(.system(size: 14))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(ink)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 8)
+            .background(YY.cream50.opacity(0.9), in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(tone == .danger ? YY.rose300 : YY.borderHair, lineWidth: 1)
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(detail ?? text)
+    }
+}
+
 /// 「在想了」——寄出之后、第一个字之前的那一两秒里唯一的动静。
 ///
 /// 刻意不写字：`状态不写字` 是定过的口径（只报失败）。这里只是一枚呼吸的墨点，
