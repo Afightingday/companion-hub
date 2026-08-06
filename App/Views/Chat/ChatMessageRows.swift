@@ -80,8 +80,13 @@ struct ChatMessageRow: View {
     private var agentBody: some View {
         ChatMarkdownBody(text: message.text, animate: message.status == .streaming)
             .frame(maxWidth: .infinity, alignment: .leading)
-            // 正文那层已经 `.allowsHitTesting(false)`，这里得重新给外层一块可命中的形状，
-            // 否则长按落在空处，行菜单一样弹不出来。
+            // ⚠️ 正文这块现在**吃手势**（b30 起）——不然代码块的拷贝钮是幽灵。
+            // 于是长按会不会被段落底下那个 `isSelectable` 的 UITextView 抢走、
+            // 让这张行菜单弹不出来，是个待实测的问题：先前那版一刀切关掉命中，
+            // 是**按推测**避让的，从没验证过冲突真的存在。这版放回去，装机看。
+            // 真被抢了再谈取舍（包里有 `textContextMenu` 能把菜单项塞进系统编辑菜单）。
+            //
+            // 空正文时整块没有可命中区域，这里补一块形状兜底。
             .contentShape(Rectangle())
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14, style: .continuous))
             .chatMenu(isUser: false, enabled: !selecting, onAction: onAction)

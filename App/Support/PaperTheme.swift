@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// packages/paper-ui/src/tokens.ts 的 Swift 镜像 —— 两边改动需同步。
+/// 设计令牌的唯一真源（原 packages/paper-ui/src/tokens.ts 已随网页端于 2026-08-03 删除）。
 enum PaperTheme {
     static let paperBg = Color(hex: 0xF5F2E8)
     static let paperCard = Color(hex: 0xFBF9F1)

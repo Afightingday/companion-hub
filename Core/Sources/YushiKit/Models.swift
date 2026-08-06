@@ -1,6 +1,6 @@
 import Foundation
 
-// 与 apps/web/src/lib/api.ts + packages/shared 对齐的 DTO。
+// 与网关 REST 响应 + packages/shared 的 zod schema 对齐的 DTO。
 // 解码原则：宽容 —— 未知字段忽略、拿不准的字段可空、时间戳保留 ISO 字符串由展示层格式化。
 
 public struct ContactConfig: Codable, Identifiable, Sendable, Equatable, Hashable {

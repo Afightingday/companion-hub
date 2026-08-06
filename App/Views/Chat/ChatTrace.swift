@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftStreamingMarkdown
 import YushiKit
 
 /// Agent 过程链 —— 设计系统 TraceLine 的 1:1 移植。
@@ -92,11 +93,7 @@ struct ChatTraceLine: View {
     private var row: some View {
         HStack(alignment: .top, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 9) {
-                ChatShimmerText(
-                    open ? (spec.full ?? spec.label) : spec.label,
-                    running: spec.running,
-                    color: spec.thinking ? YY.sage600 : YY.ink500
-                )
+                headline
                 if let target = spec.target, !target.isEmpty {
                     Text(target)
                         .font(.yyMono(13))
@@ -132,6 +129,29 @@ struct ChatTraceLine: View {
         .onTapGesture {
             guard expandable else { return }
             withAnimation(.sceneStandard(0.24)) { open.toggle() }
+        }
+    }
+
+    /// 这一行的头一句。
+    ///
+    /// **收起时**是一句摘要，走 `ChatShimmerText` —— 在想的时候要扫光，
+    /// 而扫光是靠遮罩一个 `Text` 做的，套不到 Markdown 那棵视图树上。
+    ///
+    /// **展开时**换成全文，这时才过 Markdown 渲染器（b30 祐祐点名「思考链里面的没渲染」）。
+    /// 模型的思考摘要里满是 `**加粗`、`-` 列表、行内代码，裸 `Text` 就是把星号原样摊在脸上。
+    /// 展开态一定不在 running（`running` 只在摘要为空时为真），所以不会丢扫光。
+    @ViewBuilder
+    private var headline: some View {
+        if open, let full = spec.full, !full.isEmpty {
+            // interactive: false —— 这一行要靠外层 onTapGesture 收起，
+            // 文字自己吃掉点击就再也收不起来了
+            ChatMarkdownBody(text: full, config: ChatMarkdown.trace, interactive: false)
+        } else {
+            ChatShimmerText(
+                spec.label,
+                running: spec.running,
+                color: spec.thinking ? YY.sage600 : YY.ink500
+            )
         }
     }
 

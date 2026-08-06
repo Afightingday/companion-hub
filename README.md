@@ -16,7 +16,8 @@ App/                   SwiftUI 界面层（需 Xcode / macOS 编译）
 ## 构建与安装
 
 每次 push，CI 自动出 `yushi-unsigned-ipa` 产物（无签名 IPA），
-用 SideStore / AltStore 类工具以自己的 Apple ID 自签安装。
+在 Windows 上用 **Sideloadly** 以自己的 Apple ID 重签、USB 直连安装
+（完整步骤见 `docs/runbook-ios-public.md` §3）。
 本地有 Mac 时：
 
 ```bash

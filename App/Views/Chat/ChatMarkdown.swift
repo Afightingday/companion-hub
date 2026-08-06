@@ -31,6 +31,10 @@ enum ChatMarkdown {
     /// 每条旧消息都会重新淡入一遍，那是错的。
     static let settled = makeConfig(animate: false)
 
+    /// 思考链展开后的全文。比正文小一号、用鼠尾草绿，块间距也收紧 ——
+    /// 它是「过程」不是「话」，排版上必须一眼比正文轻。
+    static let trace = makeTraceConfig()
+
     // MARK: - 纸面配色
 
     private static func makeConfig(animate: Bool) -> MarkdownRenderConfig {
@@ -95,6 +99,62 @@ enum ChatMarkdown {
         )
     }
 
+    /// 思考链专用。**刻意跟正文那份分开写、不共用参数化工厂** ——
+    /// 正文那套配色祐祐已经验收过（2026-08-05「非常美观」），
+    /// 抽公因子就等于把它拖进这次改动的风险里，不值得。
+    private static func makeTraceConfig() -> MarkdownRenderConfig {
+        let base: CGFloat = 14.5
+        return MarkdownRenderConfig(
+            shouldAnimateText: false,
+            blockQuoteStyle: .init(textFonts: fonts(base, italic: true), textColor: YY.ink400),
+            headingStyle: .init(
+                h1Font: fonts(16.5, weight: .semibold),
+                h2Font: fonts(15.5, weight: .semibold),
+                h3Font: fonts(base, weight: .semibold),
+                h4Font: fonts(base, weight: .semibold),
+                h5Font: fonts(base, weight: .semibold),
+                h6Font: fonts(base, weight: .semibold),
+                textColor: YY.sage700
+            ),
+            orderedListStyle: .init(textFonts: fonts(base), textColor: YY.sage600),
+            paragraphStyle: .init(textFonts: fonts(base), textColor: YY.sage600),
+            tableStyle: .init(
+                textFonts: fonts(12.5),
+                headerTextColor: YY.ink600,
+                regularTextColor: YY.ink500,
+                headerBackgroundColor: YY.cream400,
+                borderColor: YY.cream500,
+                actionButtonColor: YY.sage600
+            ),
+            inlineStyle: .init(
+                boldTextColor: YY.sage700,
+                linkTextFont: font(base, weight: .regular),
+                linkTextColor: YY.sage700,
+                linkUnderlineStyle: .single,
+                codeTextFont: .monospacedSystemFont(ofSize: 12.5, weight: .regular),
+                codeTextColor: YY.ink600,
+                codeBackgroundColor: YY.cream400,
+                codeUnderlineColor: .clear
+            ),
+            citationConfig: .init(
+                isEnabled: false,
+                font: font(11, weight: .regular),
+                textColor: YY.ink500,
+                backgroundColor: YY.cream400
+            ),
+            codeBlockConfig: .init(
+                theme: .xcode,
+                backgroundColor: YY.cream400,
+                foregroundColor: YY.ink400,
+                codeTextFonts: fonts(12.5, mono: true),
+                chromeTextFonts: fonts(11)
+            ),
+            blockSpacing: 9,
+            textSelectionConfig: .init(isEnabled: false),
+            thematicBreakColor: YY.cream500
+        )
+    }
+
     // MARK: - 字体零件
 
     private static func font(
@@ -133,23 +193,36 @@ enum ChatMarkdown {
     }
 }
 
-/// 祐识那边的正文。不进任何容器，直接落在纸上（这条口径没变）。
+/// 一块 Markdown 正文。不进任何容器，直接落在纸上（这条口径没变）。
 struct ChatMarkdownBody: View {
     let text: String
-    /// 只在流式中为真
-    let animate: Bool
+    var config: MarkdownRenderConfig = ChatMarkdown.settled
+
+    /// 整块吃不吃手势。
+    ///
+    /// 关掉的**代价是连锁的**：代码块右上角那枚拷贝钮是纯 SwiftUI 的
+    /// `Text` + `onTapGesture`（内部就是 `UIPasteboard.general.string = code`），
+    /// 它不在 UITextView 里 —— 一刀切关掉命中，它就成了幽灵按钮
+    ///（祐祐 b30 真机点名）。所以正文这边必须开着。
+    ///
+    /// 思考链那边则必须关着：那一整行要靠外层的 `onTapGesture` 收起，
+    /// 文字自己吃掉点击的话就再也收不起来了。
+    var interactive: Bool = true
 
     var body: some View {
-        MarkdownView(text: text, config: animate ? ChatMarkdown.streaming : ChatMarkdown.settled)
+        MarkdownView(text: text, config: config)
             .frame(maxWidth: .infinity, alignment: .leading)
-            // ⚠️ 每段正文底下都是一个 `isSelectable = true` 的 UITextView，
-            // 而那个属性写死在包内部，够不着。放着不管，它会把长按吃掉，
-            // 祐祐设计的那张行菜单（编辑/引用/拷贝/多选/删除）就再也弹不出来。
-            //
-            // 这里整块关掉命中，把长按原样还给外层 `.contextMenu`。
-            // **代价**：正文里的链接点不动了，代码块右上角那枚拷贝钮也点不动。
-            // 装机看过之后再决定是定向放行，还是索性把长按让给系统文本选中
-            // （包里有 `textContextMenu` 可以把我们的菜单项塞进系统编辑菜单）。
-            .allowsHitTesting(false)
+            .allowsHitTesting(interactive)
+    }
+}
+
+extension ChatMarkdownBody {
+    /// 正文用：流式中开淡入，定稿后关。
+    init(text: String, animate: Bool) {
+        self.init(
+            text: text,
+            config: animate ? ChatMarkdown.streaming : ChatMarkdown.settled,
+            interactive: true
+        )
     }
 }

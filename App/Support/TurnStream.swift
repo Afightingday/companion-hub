@@ -5,7 +5,7 @@ import YushiKit
 /// 网络绑定按既定分层放 App 层（SSEParser.swift:18 约定；Linux corelibs 对 bytes(for:) 支持差，
 /// 解析器留在 Core 保住 CI 可测线）。
 ///
-/// 流礼仪（apps/web/src/lib/sse.ts 对位）：
+/// 流礼仪（约定的另一端是网关 server.ts；原网页版 sse.ts 已删）：
 /// - data 行是 TurnEventEnvelope 信封；completed / error 是终止帧，服务端发完主动关流
 /// - `event: gone` = 回合已被网关清理（超保留窗/重启）——按正常终止处理，上层回落拉历史
 /// - 掉线（无终止帧即断流）自动重连，带 Last-Event-ID 严格续传（回放 id 大于游标的信封）

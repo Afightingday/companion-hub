@@ -1,7 +1,8 @@
 import Foundation
 
-// apps/web/src/lib/applyEvent.ts 的 Swift 移植 + 历史消息（ApiMessage）到 UI 模型的换装。
-// 纯逻辑、零 UI 依赖——放 Core 保住 Linux CI 可测线（归约规则改动必须两端同步）。
+// 事件归约 + 历史消息（ApiMessage）到 UI 模型的换装。
+// 源头是已删除的网页版 applyEvent.ts（2026-08-03 起本文件即唯一实现，考古翻 99fc044 之前）。
+// 纯逻辑、零 UI 依赖——放 Core 保住 Linux CI 可测线；改归约规则要同步改网关侧事件契约。
 
 /// 审批的终态。`expired`（等太久我们代拒）与 `failed`（盖了章但工具没跑成）
 /// 是必须分开的两个：少了它们，这两种情况只能跟「拒绝了」画成同一张灰票；

@@ -4,6 +4,7 @@ import YushiKit
 
 /// 会话页状态机：快照加载 → 乐观发送 → 按 turnId 订阅事件流逐条归约 → 收尾补一次已读。
 /// 归约规则在 Core（ChatReducer.swift）；这里只管网络回合、消息数组，以及派生行的缓存。
+/// 编排原型是已删除的网页版 Chat.tsx（考古翻 99fc044 之前）。
 @MainActor
 @Observable
 final class ChatSession {

@@ -70,7 +70,7 @@ public struct ContactPatch: Encodable, Sendable {
     }
 }
 
-/// 网关 HTTP 客户端（端点与 apps/web/src/lib/api.ts 一一对应）。
+/// 网关 HTTP 客户端（端点以 apps/gateway/src/server.ts 的路由为准）。
 /// 鉴权：Authorization: Bearer <AUTH_TOKEN>（server.ts 也接受 ?token= 供 SSE 用）。
 public final class GatewayClient: @unchecked Sendable {
     public let config: GatewayConfig

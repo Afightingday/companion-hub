@@ -1,7 +1,7 @@
 import XCTest
 @testable import YushiKit
 
-/// 归约器用例——规则以 apps/web/src/lib/applyEvent.ts 为准绳，两端改动必须同步。
+/// 归约器用例——规则的准绳现在是 ChatReducer.swift 本身（原网页版 applyEvent.ts 已删）。
 final class ChatReducerTests: XCTestCase {
     private func makeMessage() -> UiMessage {
         UiMessage(id: "m1", author: "contact", status: .streaming, sentAt: "2026-08-02T00:00:00Z")

@@ -1,4 +1,4 @@
-# CI：Linux 跑核心包单测 + macOS 出无签名 IPA（SideStore/AltStore 自签安装用）。
+# CI：Linux 跑核心包单测 + macOS 出无签名 IPA（Sideloadly 重签安装用）。
 # 安全基线：GITHUB_TOKEN 只读；不用 pull_request_target；外来 PR 首次运行需人工批准（仓库设置里勾）。
 # （此文件由同步脚本落位到公仓 .github/workflows/；私仓自身不跑 macOS workflow——免费额度按 10 倍扣。）
 name: iOS
@@ -20,7 +20,7 @@ jobs:
       - run: swift test --package-path Core
 
   build-unsigned-ipa:
-    name: 无签名 IPA（SideStore 自签用）
+    name: 无签名 IPA（Sideloadly 重签用）
     # iOS 26 目标需要 Xcode 26 SDK（macos-26 自带）
     runs-on: macos-26
     steps:

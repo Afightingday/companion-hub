@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// 会话总览页专用令牌 —— 镜像设计稿 sandbox/youshi-home/src/styles/tokens.css。
-/// 只放本页用到的值；PaperTheme 是 packages/paper-ui 的镜像，别混进来。
+/// 只放本页用到的值；全局设计令牌在 PaperTheme，别混进来。
 enum SceneTokens {
     // ── 宣纸奶油中性色 ──
     static let cream100 = Color(hex: 0xFBFAF5)
