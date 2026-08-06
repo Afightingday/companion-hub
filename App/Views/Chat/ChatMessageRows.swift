@@ -7,9 +7,10 @@ enum ChatMessageAction {
 }
 
 /// 一条消息的一行。
-/// 你的话＝一圈 2px 虚线，不填色；祐识那边的话不进任何容器，正文直接落在纸上。
+/// 你的话＝大圆角细虚线的浅纸白气泡（2026-08-06 #11 照 GPT 参考）；
+/// 祐识那边的话不进任何容器，正文直接落在纸上。
 /// 时间**完全不进流**：整点浮动胶囊是唯一的时间线索（不做左拖露时间）。
-/// 送达状态只报**失败**，而且不写字只给图标 —— 寄出中什么都不显示。
+/// 送达状态只报**失败**（统一报错行 ChatErrorNote）—— 寄出中什么都不显示。
 struct ChatMessageRow: View {
     let message: UiMessage
     let selecting: Bool
@@ -95,8 +96,13 @@ struct ChatMessageRow: View {
                 max(0, length - 32 - (selecting ? 36 : 0))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            // 正文那层已经 `.allowsHitTesting(false)`，这里得重新给外层一块可命中的形状，
-            // 否则长按落在空处，行菜单一样弹不出来。
+            // ⚠️ 正文这块现在**吃手势**（b30 起）——不然代码块的拷贝钮是幽灵。
+            // 于是长按会不会被段落底下那个 `isSelectable` 的 UITextView 抢走、
+            // 让这张行菜单弹不出来，是个待实测的问题：先前那版一刀切关掉命中，
+            // 是**按推测**避让的，从没验证过冲突真的存在。这版放回去，装机看。
+            // 真被抢了再谈取舍（包里有 `textContextMenu` 能把菜单项塞进系统编辑菜单）。
+            //
+            // 空正文时整块没有可命中区域，这里补一块形状兜底。
             .contentShape(Rectangle())
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14, style: .continuous))
             .chatMenu(isUser: false, enabled: !selecting, onAction: onAction)

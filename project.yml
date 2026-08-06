@@ -54,6 +54,13 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: 祐识 # 2026-08-01 六审正式定名（曾用名：雨施流形）
+        # 本 App 自己没有 .lproj，所有中文都写死在源码里，所以从来不需要声明语言。
+        # 但依赖包（SwiftStreamingMarkdown）**是带 .lproj 的**，它那枚代码块拷贝钮
+        # 的文案要按 App 支持的语言去查；不声明 zh-Hans，查出来就是英文 "Copy"。
+        CFBundleDevelopmentRegion: zh-Hans
+        CFBundleLocalizations:
+          - zh-Hans
+          - en
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

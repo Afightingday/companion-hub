@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftStreamingMarkdown
 import YushiKit
 
 /// Agent 过程链 —— 设计系统 TraceLine 的 1:1 移植。
@@ -89,11 +90,7 @@ struct ChatTraceLine: View {
     private var row: some View {
         HStack(alignment: .top, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 9) {
-                ChatShimmerText(
-                    open ? (spec.full ?? spec.label) : spec.label,
-                    running: spec.running,
-                    color: spec.thinking ? YY.sage600 : YY.ink500
-                )
+                headline
                 if let target = spec.target, !target.isEmpty {
                     Text(target)
                         .font(.yyMono(13))
@@ -133,6 +130,29 @@ struct ChatTraceLine: View {
         }
     }
 
+    /// 这一行的头一句。
+    ///
+    /// **收起时**是一句摘要，走 `ChatShimmerText` —— 在想的时候要扫光，
+    /// 而扫光是靠遮罩一个 `Text` 做的，套不到 Markdown 那棵视图树上。
+    ///
+    /// **展开时**换成全文，这时才过 Markdown 渲染器（b30 祐祐点名「思考链里面的没渲染」）。
+    /// 模型的思考摘要里满是 `**加粗`、`-` 列表、行内代码，裸 `Text` 就是把星号原样摊在脸上。
+    /// 展开态一定不在 running（`running` 只在摘要为空时为真），所以不会丢扫光。
+    @ViewBuilder
+    private var headline: some View {
+        if open, let full = spec.full, !full.isEmpty {
+            // interactive: false —— 这一行要靠外层 onTapGesture 收起，
+            // 文字自己吃掉点击就再也收不起来了
+            ChatMarkdownBody(text: full, config: ChatMarkdown.trace, interactive: false)
+        } else {
+            ChatShimmerText(
+                spec.label,
+                running: spec.running,
+                color: spec.thinking ? YY.sage600 : YY.ink500
+            )
+        }
+    }
+
     // MARK: - part → 一行的展示规格
 
     private struct Spec {
@@ -152,17 +172,17 @@ struct ChatTraceLine: View {
     private var spec: Spec {
         switch part.payload {
         case .reasoningSummary(let text):
-            // 思考摘要是模型的草稿，常夹着裸 markdown 记号（**加粗**、`码`、# 标题）。
-            // 这一行是纯文本 Text，不解析就会把星号原样露出来（2026-08-06 #16 截图里那样），
-            // 记号全剥掉只留字。
-            let plain = text
+            // 摘要与全文各走各的路（#16 × b30 合流）：
+            // 收起那句是纯文本 Text（要扫光），裸 markdown 记号会原样摊在脸上 —— 剥掉；
+            // 展开的全文走渲染器（ChatMarkdown.trace），记号就是排版本身 —— **必须留原文**。
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let plainHead = (trimmed.split(separator: "\n").first.map(String.init) ?? trimmed)
                 .replacingOccurrences(of: "**", with: "")
                 .replacingOccurrences(of: "__", with: "")
                 .replacingOccurrences(of: "`", with: "")
                 .replacingOccurrences(of: "#", with: "")
-            let trimmed = plain.trimmingCharacters(in: .whitespacesAndNewlines)
-            let head = trimmed.split(separator: "\n").first.map(String.init) ?? trimmed
-            let brief = head.count > 22 ? String(head.prefix(22)) + "…" : head
+                .trimmingCharacters(in: .whitespaces)
+            let brief = plainHead.count > 22 ? String(plainHead.prefix(22)) + "…" : plainHead
             return Spec(
                 icon: nil, // thinking 走 GlyphThoughtCurl，不占 SF 位
                 label: brief.isEmpty ? "在想怎么说" : brief,
